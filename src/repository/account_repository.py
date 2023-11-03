@@ -3,7 +3,7 @@ from typing import List, Tuple
 
 from src.model.account import Account
 
-DB_NAME = '..\\accounts.db'
+DB_NAME = 'accounts.db'
 
 
 def create_database():

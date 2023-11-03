@@ -70,7 +70,7 @@ STOPPING = 99
 
 
 def log_to_file(log: Any) -> None:
-    with open('..\\password_bot.log', 'a') as f:
+    with open('password_bot.log', 'a') as f:
         f.write(log + '\n')
 
 
@@ -667,7 +667,7 @@ def main():
     create_database()
 
     # Initialize the Pickle database
-    persistence = PicklePersistence(filepath='..\\DB.pkl')
+    persistence = PicklePersistence(filepath='DB.pkl')
 
     application = Application.builder().token(keyring_get('Telegram')).persistence(persistence).build()
 
