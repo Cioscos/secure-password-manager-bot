@@ -1,0 +1,6 @@
+/keys
+/venv
+/db
+accounts.db
+DB.pkl
+/.idea
