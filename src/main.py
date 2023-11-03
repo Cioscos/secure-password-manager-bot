@@ -3,13 +3,13 @@ import secrets
 import string
 import traceback
 from pydoc import html
-from typing import Dict, List, Any
+from typing import List, Any
 
 from icecream import ic, install
 
-from repository.account_repository import *
-from model.account import *
-from crypto.crypto_service import *
+from src.account_repository import *
+from src.account import *
+from src.crypto_service import *
 from environment_variables_mg import *
 
 install()
