@@ -366,6 +366,9 @@ async def get_manual_password_and_ask_passphrase(update: Update, context: Contex
 async def get_passphrase_and_save_account(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     passphrase = update.message.text
 
+    # delete passphrase message
+    await update.message.delete()
+
     # get salted_hash and salt
     stored_hash, stored_salt = get_hash_and_salt_for_id(update.message.chat_id)
 
@@ -477,6 +480,9 @@ async def accounts_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def get_passphrase_and_call_account_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     chat_id = update.message.chat_id
     passphrase = update.message.text
+
+    # delete passphrase message
+    await update.message.delete()
 
     # get salted_hash and salt
     stored_hash, stored_salt = get_hash_and_salt_for_id(update.message.chat_id)
