@@ -3,4 +3,5 @@
 /db
 accounts.db
 DB.pkl
+password_bot.log
 /.idea
