@@ -7,9 +7,9 @@ from typing import List, Any
 
 from icecream import ic, install
 
-from src.account_repository import *
-from src.account import *
-from src.crypto_service import *
+from account_repository import *
+from account import *
+from crypto_service import *
 from environment_variables_mg import *
 
 install()
