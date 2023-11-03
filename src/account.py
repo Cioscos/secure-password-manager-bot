@@ -3,7 +3,7 @@ import uuid
 from typing import Optional
 
 
-@dataclass(slots=True)
+@dataclass
 class Account:
     id: str = field(init=False)
     name: Optional[str] = field(init=False)
