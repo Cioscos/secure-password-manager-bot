@@ -7,8 +7,10 @@ from typing import Dict, List, Any
 
 from icecream import ic, install
 
-from src.crypto.crypto_service import *
-from src.repository.account_repository import *
+from repository.account_repository import *
+from model.account import *
+from crypto.crypto_service import *
+from environment_variables_mg import *
 
 install()
 from telegram import Update, ReplyKeyboardMarkup, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -21,8 +23,6 @@ from telegram.ext import (
     PicklePersistence, MessageHandler, filters, CallbackQueryHandler
 )
 from telegram.helpers import escape_markdown
-from src.environment_variables_mg import keyring_get, keyring_initialize
-from src.model.account import Account
 
 TEMP_SAVED_ACCOUNT = 'temp_saved_account'
 
