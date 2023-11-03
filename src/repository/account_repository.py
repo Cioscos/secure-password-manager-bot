@@ -1,7 +1,7 @@
 import sqlite3
 from typing import List, Tuple
 
-from src.model.account import Account
+from ..model.account import Account
 
 DB_NAME = 'accounts.db'
 
