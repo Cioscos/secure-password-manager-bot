@@ -7,8 +7,8 @@ from typing import List, Any
 
 from icecream import ic, install
 
-from account_repository import *
 from account import *
+from account_repository import *
 from crypto_service import *
 from environment_variables_mg import *
 
@@ -53,6 +53,7 @@ CURRENT_ACCOUNT_ID_SELECTED = 'current_account_id_selected'
 CALLBACK_ACCOUNT_NAME = 'selected_account'
 
 TEMP_KEY = 'temp_key'
+TEMP_PASSPHRASE = 'passphrase'
 
 # State definitions for top-level conv handler
 MAIN_MENU, ADD_ACCOUNT, SHOW_ACCOUNT, DELETE_ACCOUNT = map(chr, range(4))
@@ -75,6 +76,17 @@ def log_to_file(log: Any) -> None:
 
 
 ic.configureOutput(prefix='Debug| ', outputFunction=log_to_file, includeContext=True)
+
+
+async def clear_temp_passphrase(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Clear the temporary passphrase from the chat_data if it exists.
+
+    Args:
+        context: The context object from the Telegram bot.
+    """
+    if TEMP_PASSPHRASE in context.chat_data:
+        del context.chat_data[TEMP_PASSPHRASE]
 
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -344,9 +356,12 @@ async def get_callback_data_from_generate_new_password_or_confirm(update: Update
         account: Account = context.chat_data[TEMP_SAVED_ACCOUNT]
         account.password = context.chat_data['temp_password']
 
-        await context.bot.send_message(chat_id, "Inserisci la passphrase")
+        if not context.chat_data.get(TEMP_PASSPHRASE):
+            await context.bot.send_message(chat_id, "Inserisci la passphrase")
+            return ASK_PASSPHRASE_INSERT
 
-        return ASK_PASSPHRASE_INSERT
+        else:
+            return await get_passphrase_and_save_account(update, context, manual_call=True)
 
     else:
         await context.bot.send_message(chat_id, "Per favore premi uno dei bottoni")
@@ -358,24 +373,48 @@ async def get_manual_password_and_ask_passphrase(update: Update, context: Contex
     account: Account = context.chat_data[TEMP_SAVED_ACCOUNT]
     account.password = password
 
-    await update.message.reply_text("Inserisci la passphrase")
+    if not context.chat_data.get(TEMP_PASSPHRASE):
+        await update.message.reply_text("Inserisci la passphrase")
+        return INSERT_USER_CHOSEN_PASSWORD
 
-    return INSERT_USER_CHOSEN_PASSWORD
+    else:
+        return await get_passphrase_and_save_account(update, context, manual_call=True)
 
 
-async def get_passphrase_and_save_account(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    passphrase = update.message.text
+async def get_passphrase_and_save_account(update: Update, context: ContextTypes.DEFAULT_TYPE,
+                                          manual_call: bool = False) -> int:
+    chat_id = update.effective_message.chat_id
 
-    # delete passphrase message
-    await update.message.delete()
+    if not manual_call:
+        # delete passphrase message
+        await update.message.delete()
 
-    # get salted_hash and salt
-    stored_hash, stored_salt = get_hash_and_salt_for_id(update.message.chat_id)
+    passphrase_dict = context.chat_data.get(TEMP_PASSPHRASE)
+    if not passphrase_dict:
+        passphrase = update.message.text
+        # get salted_hash and salt
+        stored_hash, stored_salt = get_hash_and_salt_for_id(update.message.chat_id)
+    else:
+        passphrase = passphrase_dict['passphrase']
+        stored_hash = passphrase_dict['hash']
+        stored_salt = passphrase_dict['salt']
 
     # Verify the passphrase
     is_valid = verify_passphrase(passphrase, stored_salt, stored_hash)
 
     if is_valid:
+        if not context.chat_data.get(TEMP_PASSPHRASE):
+            # store the passphrase, stored_hash and stored_salt into a temporary dictionary
+            context.chat_data[TEMP_PASSPHRASE] = {
+                'passphrase': passphrase,
+                'hash': stored_hash,
+                'salt': stored_salt
+            }
+
+            # start a job which will delete TEMP_PASSPHRASE from context_data every 10m
+            context.job_queue.run_repeating(clear_temp_passphrase, chat_id=chat_id, interval=600, first=0)
+            ic("Stored passphrase job")
+
         # Derive encryption key from the passphrase
         key = derive_key(passphrase, stored_salt)
 
@@ -385,14 +424,14 @@ async def get_passphrase_and_save_account(update: Update, context: ContextTypes.
         account.password = encrypt(account.password, key)
 
         # Save the account on DB
-        insert_account(account, update.message.chat_id)
+        insert_account(account, update.effective_message.chat_id)
 
         del key
         del passphrase
         del account
         context.chat_data.pop(TEMP_SAVED_ACCOUNT)
 
-        await update.message.reply_text("Account creato con successo")
+        await context.bot.send_message(chat_id, "Account creato con successo")
         await send_welcome_message(update, context)
 
         return ConversationHandler.END
@@ -467,29 +506,55 @@ async def accounts_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     # check if the user is registered
     if is_user_registered(chat_id):
-        await update.message.reply_text("Inserisci la passphrase")
+        # check if the passphrase is still temporarily saved otherwise ask it
+        if not context.chat_data.get(TEMP_PASSPHRASE):
+            await update.message.reply_text("Inserisci la passphrase")
 
-        # go to get_passphrase_and_call_account_choice
-        return ASK_PASSPHRASE_READ
+            # go to get_passphrase_and_call_account_choice
+            return ASK_PASSPHRASE_READ
+
+        else:
+            return await get_passphrase_and_call_account_choice(update, context, manual_call=True)
 
     else:
         await update.message.reply_text('Non hai ancora inserito nessun account. Usa /newAccount per registrarne uno')
         return ConversationHandler.END
 
 
-async def get_passphrase_and_call_account_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    chat_id = update.message.chat_id
-    passphrase = update.message.text
+async def get_passphrase_and_call_account_choice(update: Update, context: ContextTypes.DEFAULT_TYPE,
+                                                 manual_call: bool = False) -> int:
+    chat_id = update.effective_message.chat_id
 
-    # delete passphrase message
-    await update.message.delete()
+    if not manual_call:
+        # delete passphrase message
+        await update.message.delete()
 
-    # get salted_hash and salt
-    stored_hash, stored_salt = get_hash_and_salt_for_id(update.message.chat_id)
+    passphrase_dict = context.chat_data.get(TEMP_PASSPHRASE)
+    if not passphrase_dict:
+        passphrase = update.message.text
+        # get salted_hash and salt
+        stored_hash, stored_salt = get_hash_and_salt_for_id(update.message.chat_id)
+    else:
+        passphrase = passphrase_dict['passphrase']
+        stored_hash = passphrase_dict['hash']
+        stored_salt = passphrase_dict['salt']
+
     # Verify the passphrase
     is_valid = verify_passphrase(passphrase, stored_salt, stored_hash)
 
     if is_valid:
+        # store the passphrase, stored_hash and stored_salt into a temporary dictionary
+        if not context.chat_data.get(TEMP_PASSPHRASE):
+            context.chat_data[TEMP_PASSPHRASE] = {
+                'passphrase': passphrase,
+                'hash': stored_hash,
+                'salt': stored_salt
+            }
+
+            # start a job which will delete TEMP_PASSPHRASE from context_data every 10m
+            context.job_queue.run_repeating(clear_temp_passphrase, chat_id=chat_id, interval=600, first=0)
+            ic("Stored passphrase job")
+
         # Derive encryption key from the passphrase
         key = derive_key(passphrase, stored_salt)
         context.chat_data[TEMP_KEY] = key
