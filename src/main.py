@@ -4,15 +4,8 @@ import string
 import traceback
 from pydoc import html
 from typing import List, Any
+from warnings import filterwarnings
 
-from icecream import ic, install
-
-from account import *
-from account_repository import *
-from crypto_service import *
-from environment_variables_mg import *
-
-install()
 from telegram import Update, ReplyKeyboardMarkup, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -23,6 +16,27 @@ from telegram.ext import (
     PicklePersistence, MessageHandler, filters, CallbackQueryHandler
 )
 from telegram.helpers import escape_markdown
+from telegram.warnings import PTBUserWarning
+
+from account_repository import *
+from crypto_service import *
+from environment_variables_mg import *
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%y-%m-%d %H:%M:%S',
+    filename='password_bot.log',
+    filemode='a'
+)
+
+filterwarnings(action="ignore", message=r".*CallbackQueryHandler", category=PTBUserWarning)
+
+# set higher logging level for httpx to avoid all GET and POST requests being logged
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+logger = logging.getLogger(__name__)
 
 TEMP_SAVED_ACCOUNT = 'temp_saved_account'
 
@@ -68,14 +82,6 @@ ACCOUNT_CHOICE, ACCOUNT_DETAIL, ACCOUNT_ACTIONS = map(chr, range(14, 17))
 PASSPHRASE_SAVING = 17
 
 STOPPING = 99
-
-
-def log_to_file(log: Any) -> None:
-    with open('password_bot.log', 'a') as f:
-        f.write(log + '\n')
-
-
-ic.configureOutput(prefix='Debug| ', outputFunction=log_to_file, includeContext=True)
 
 
 async def clear_temp_passphrase(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -413,7 +419,7 @@ async def get_passphrase_and_save_account(update: Update, context: ContextTypes.
 
             # start a job which will delete TEMP_PASSPHRASE from context_data every 10m
             context.job_queue.run_repeating(clear_temp_passphrase, chat_id=chat_id, interval=600, first=0)
-            ic("Stored passphrase job")
+            logger.info("Stored passphrase job")
 
         # Derive encryption key from the passphrase
         key = derive_key(passphrase, stored_salt)
@@ -553,7 +559,7 @@ async def get_passphrase_and_call_account_choice(update: Update, context: Contex
 
             # start a job which will delete TEMP_PASSPHRASE from context_data every 10m
             context.job_queue.run_repeating(clear_temp_passphrase, chat_id=chat_id, interval=600, first=0)
-            ic("Stored passphrase job")
+            logger.info("Stored passphrase job")
 
         # Derive encryption key from the passphrase
         key = derive_key(passphrase, stored_salt)
