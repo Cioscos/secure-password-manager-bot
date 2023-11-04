@@ -2,7 +2,8 @@ import os
 from typing import Union, Optional, Dict
 
 KEYRING: Dict[str, Optional[str]] = {
-    'Telegram': None
+    'Telegram': None,
+    'DevId': None
 }
 
 
@@ -21,6 +22,12 @@ def keyring_initialize() -> Union[bool, None]:
     # Get the telegram token key
     with open(os.path.join(root_path, 'telegram.dat')) as file:
         KEYRING['Telegram'] = file.read().strip()
+        ic("Telegram token read")
+
+    # Get the dev chat id
+    with open(os.path.join(root_path, 'dev_id.dat')) as file:
+        KEYRING['DevId'] = file.read().strip()
+        ic("DevId read")
 
     return True
 
@@ -36,4 +43,4 @@ def keyring_get(service: str) -> Union[str, None]:
         ic('Key of service %s not found in keyring' % service)
         return None
 
-    return ic(KEYRING[service])
+    return KEYRING[service]
