@@ -431,6 +431,7 @@ async def get_passphrase_and_save_account(update: Update, context: ContextTypes.
 
         # Save the account on DB
         insert_account(account, update.effective_message.chat_id)
+        logger.info("Account saved successfully")
 
         del key
         del passphrase
@@ -573,16 +574,21 @@ async def get_passphrase_and_call_account_choice(update: Update, context: Contex
             account.user_name = decrypt(account.user_name, key)
             account.password = decrypt(account.password, key)
 
-        if CURRENT_ACCOUNT_PAGE not in context.chat_data.keys():
-            context.chat_data[CURRENT_ACCOUNT_PAGE] = 0
+        if accounts:
+            if CURRENT_ACCOUNT_PAGE not in context.chat_data.keys():
+                context.chat_data[CURRENT_ACCOUNT_PAGE] = 0
 
-        reply_markup = generate_account_list_keyboard(accounts)
+            reply_markup = generate_account_list_keyboard(accounts)
 
-        await update.message.reply_text("Che account vuoi aprire?\n\n"
-                                        "Premi /stop per tornare al menù principale", reply_markup=reply_markup)
+            await update.message.reply_text("Che account vuoi aprire?\n\n"
+                                            "Premi /stop per tornare al menù principale", reply_markup=reply_markup)
 
-        return ACCOUNT_CHOICE
+            return ACCOUNT_CHOICE
 
+        else:
+            await update.message.reply_text(
+                "Non ci sono account memorizzati!\n\nInseriscine prima uno utilizzando /newAccount")
+            return await stop_nested(update, context)
     else:
         await update.message.reply_text("*PASSPHRASE SBAGLIATA!*\n\nProva di nuovo o premi /stop per uscire",
                                         parse_mode=ParseMode.MARKDOWN)
@@ -715,6 +721,7 @@ async def get_passphrase_and_store_to_db(update: Update, context: ContextTypes.D
                 update.message.from_user.name,
                 salted_hash,
                 salt)
+    logger.info("Passphrase saved in the DB")
 
     return ConversationHandler.END
 
