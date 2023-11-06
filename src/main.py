@@ -640,12 +640,14 @@ async def get_callback_data_from_detail_buttons_call_actions(update: Update, con
     return ACCOUNT_CHOICE
 
 
-def generate_account_list_keyboard(accounts: List[Account]) -> InlineKeyboardMarkup:
+def generate_account_list_keyboard(accounts: List[Account],
+                                   draw_navigation_buttons: bool = True) -> InlineKeyboardMarkup:
     """
     Generates an inline keyboard markup for the provided list of accounts.
 
     Args:
         accounts (List[Account]): List of Account objects.
+        draw_navigation_buttons (bool): Choose to draw or not the navigation buttons
 
     Returns:
         InlineKeyboardMarkup: The generated inline keyboard markup.
@@ -665,10 +667,11 @@ def generate_account_list_keyboard(accounts: List[Account]) -> InlineKeyboardMar
     if row:
         keyboard.append(row)
 
-    # Add navigation buttons
-    navigation_buttons = [InlineKeyboardButton("Previous", callback_data="prev_page"),
-                          InlineKeyboardButton("Next", callback_data="next_page")]
-    keyboard.append(navigation_buttons)
+    if draw_navigation_buttons:
+        # Add navigation buttons
+        navigation_buttons = [InlineKeyboardButton("Previous", callback_data="prev_page"),
+                              InlineKeyboardButton("Next", callback_data="next_page")]
+        keyboard.append(navigation_buttons)
 
     return InlineKeyboardMarkup(keyboard)
 
@@ -785,7 +788,7 @@ async def get_account_name_and_search(update: Update, context: ContextTypes.DEFA
         if fuzz.token_set_ratio(account_name, account.name) > 55:
             valid_accounts.append(account)
 
-    reply_markup = generate_account_list_keyboard(valid_accounts)
+    reply_markup = generate_account_list_keyboard(valid_accounts, draw_navigation_buttons=False)
 
     await update.message.reply_text("Sono stati trovati i seguenti accounts:", reply_markup=reply_markup)
 
