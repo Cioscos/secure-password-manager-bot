@@ -828,6 +828,11 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("Okay, Ciao.")
     context.chat_data.clear()
 
+    # stop the clear_temp_passphrase_job
+    for job in context.job_queue.jobs():
+        if job.name == 'clear_temp_passphrase_job':
+            job.schedule_removal()
+
     return ConversationHandler.END
 
 
