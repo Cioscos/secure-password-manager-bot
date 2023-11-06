@@ -1,5 +1,5 @@
 import sqlite3
-from typing import List, Tuple
+from typing import List, Tuple, Optional, Union
 
 from account import Account
 
@@ -137,7 +137,7 @@ def is_user_registered(chat_id: int) -> bool:
     return result is not None
 
 
-def get_accounts_for_chat_id(chat_id: int, page: int = 0, page_size: int = 6) -> List[Account]:
+def get_accounts_for_chat_id(chat_id: int, page: Optional[int] = 0, page_size: Optional[int] = 6) -> List[Account]:
     """
     Fetches a paginated list of accounts associated with a given chat_id.
 
@@ -150,17 +150,26 @@ def get_accounts_for_chat_id(chat_id: int, page: int = 0, page_size: int = 6) ->
         List[Tuple[str, str, str, str]]: A list of tuples, each representing an account.
         Each tuple contains (id, name, username, password).
     """
-    offset = page * page_size  # Calculate the starting point based on the page number
+    query: str = '''
+    SELECT id, name, username, password
+    FROM accounts
+    WHERE chat_id = ?
+    '''
+    parameters: Union[Tuple[int], Tuple[int, int], Tuple[int, int, int]]
+
+    if page and page_size:
+        # Calculate the starting point based on the page number
+        offset = page * page_size
+        query += ''' LIMIT ? OFFSET ?'''
+        parameters = (chat_id, page_size, offset)
+    else:
+        parameters = (chat_id,)
+
 
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
-    cursor.execute('''
-    SELECT id, name, username, password
-    FROM accounts
-    WHERE chat_id = ?
-    LIMIT ? OFFSET ?
-    ''', (chat_id, page_size, offset))
+    cursor.execute(query, parameters)
 
     accounts = cursor.fetchall()
     conn.close()

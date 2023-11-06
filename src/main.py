@@ -14,6 +14,7 @@ from telegram.ext import (
 )
 from telegram.helpers import escape_markdown
 from telegram.warnings import PTBUserWarning
+from thefuzz import fuzz
 
 from account_repository import *
 from crypto_service import *
@@ -76,8 +77,8 @@ OPTION_CHOICE, ASK_PASSPHRASE_READ, INSERT_PSW_LENGHT, ACCEPT_PSW = map(chr, ran
 
 ACCOUNT_CHOICE, ACCOUNT_DETAIL, ACCOUNT_ACTIONS = map(chr, range(14, 17))
 
-PASSPHRASE_SAVING = 17
-
+ASK_SERVICE_NAME = 17
+PASSPHRASE_SAVING = 18
 STOPPING = 99
 
 
@@ -109,6 +110,7 @@ async def send_welcome_message(update: Update, context: ContextTypes.DEFAULT_TYP
                             f"Come posso aiutarti? Usa i seguenti comandi per interagire con me:\n"
                             f"/newAccount - Inserisci un nuovo account da memorizzare\n"
                             f"/accounts - Mostra tutti gli account\n"
+                            f"/search - Cerca un account memorizzato inserendo il nome\n"
                             f"/passphrase - Imposta la passphrase per criptare i tuoi dati")
 
     await context.bot.send_message(update.effective_chat.id, welcome_message)
@@ -695,6 +697,100 @@ async def get_passphrase_and_store_to_db(update: Update, context: ContextTypes.D
     return ConversationHandler.END
 
 
+async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """
+    Starting point for search command
+
+    :return:
+    """
+    chat_id = update.message.chat_id
+
+    # check if the user is registered
+    if is_user_registered(chat_id):
+        # check if the passphrase is still temporarily saved otherwise ask it
+        if not context.chat_data.get(TEMP_PASSPHRASE):
+            await update.message.reply_text("Inserisci la passphrase")
+
+            # go to get_passphrase_and_call_account_choice
+            return ASK_PASSPHRASE_READ
+
+        else:
+            return await get_passphrase_and_call_account_search(update, context, manual_call=True)
+
+    else:
+        await update.message.reply_text('Non hai ancora inserito nessun account. Usa /newAccount per registrarne uno')
+        return ConversationHandler.END
+
+
+async def get_passphrase_and_call_account_search(update: Update, context: ContextTypes.DEFAULT_TYPE,
+                                                 manual_call: bool = False) -> int:
+    chat_id = update.effective_message.chat_id
+
+    if not manual_call:
+        # delete passphrase message
+        await update.message.delete()
+
+    passphrase_dict = context.chat_data.get(TEMP_PASSPHRASE)
+    if not passphrase_dict:
+        passphrase = update.message.text
+        # get salted_hash and salt
+        stored_hash, stored_salt = get_hash_and_salt_for_id(update.message.chat_id)
+    else:
+        passphrase = passphrase_dict['passphrase']
+        stored_hash = passphrase_dict['hash']
+        stored_salt = passphrase_dict['salt']
+
+    # Verify the passphrase
+    is_valid = verify_passphrase(passphrase, stored_salt, stored_hash)
+
+    if is_valid:
+        # store the passphrase, stored_hash and stored_salt into a temporary dictionary
+        if not context.chat_data.get(TEMP_PASSPHRASE):
+            context.chat_data[TEMP_PASSPHRASE] = {
+                'passphrase': passphrase,
+                'hash': stored_hash,
+                'salt': stored_salt
+            }
+
+            # start a job which will delete TEMP_PASSPHRASE from context_data every 10m
+            context.job_queue.run_repeating(clear_temp_passphrase, chat_id=chat_id, interval=600, first=0)
+            logger.info("Stored passphrase job")
+
+        # Derive encryption key from the passphrase
+        context.chat_data[TEMP_KEY] = derive_key(passphrase, stored_salt)
+        del passphrase
+
+        await update.message.reply_text("Inserisci il nome dell'account che hai memorizzato.\n\n"
+                                        "Il nome dell'account *può* anche non essere preciso.",
+                                        parse_mode=ParseMode.MARKDOWN)
+        return ASK_SERVICE_NAME
+
+    else:
+        await update.message.reply_text("*PASSPHRASE SBAGLIATA!*\n\nProva di nuovo o premi /stop per uscire",
+                                        parse_mode=ParseMode.MARKDOWN)
+
+
+async def get_account_name_and_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    chat_id = update.message.chat_id
+    account_name = update.message.text
+    valid_accounts: List[Account] = []
+
+    accounts: List[Account] = get_accounts_for_chat_id(chat_id)
+
+    for account in accounts:
+        account.user_name = decrypt(account.user_name, context.chat_data[TEMP_KEY])
+        account.password = decrypt(account.password, context.chat_data[TEMP_KEY])
+
+        if fuzz.token_sort_ratio(account_name, account.name) > 55:
+            valid_accounts.append(account)
+
+    reply_markup = generate_account_list_keyboard(valid_accounts)
+
+    await update.message.reply_text("Sono stati trovati i seguenti accounts:", reply_markup=reply_markup)
+
+    return ACCOUNT_DETAIL
+
+
 async def stop_nested(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("Comando stoppato")
 
@@ -799,6 +895,22 @@ def main():
         fallbacks=[]
     )
 
+    account_search_handler = ConversationHandler(
+        persistent=True,
+        name='account_search_handler_v1',
+        entry_points=[CommandHandler('search', search_callback)],
+        states={
+            ASK_PASSPHRASE_READ: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, get_passphrase_and_call_account_choice)],
+            ASK_SERVICE_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_account_name_and_search)],
+            ACCOUNT_DETAIL: [CallbackQueryHandler(get_callback_data_from_account_button_call_account_detail)]
+        },
+        map_to_parent={
+            STOPPING: MAIN_MENU
+        },
+        fallbacks=[CommandHandler("stop", stop_nested)],
+    )
+
     main_handler = ConversationHandler(
         persistent=True,
         name='main_handler_v1',
@@ -806,7 +918,8 @@ def main():
         states={
             MAIN_MENU: [new_account_handler,
                         accounts_handler,
-                        passphrase_handler]
+                        passphrase_handler,
+                        account_search_handler]
         },
         fallbacks=[]
     )
