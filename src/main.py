@@ -120,6 +120,11 @@ async def send_welcome_message(update: Update, context: ContextTypes.DEFAULT_TYP
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await send_welcome_message(update, context)
 
+    # start a job which will delete TEMP_PASSPHRASE from context_data every 10m
+    context.job_queue.run_repeating(clear_temp_passphrase, chat_id=update.message.chat_id, interval=600, first=0,
+                                    name="clear_temp_passphrase_job")
+    logger.info("Stored passphrase job")
+
     return MAIN_MENU
 
 
@@ -388,10 +393,6 @@ async def get_passphrase_and_save_account(update: Update, context: ContextTypes.
                 'salt': stored_salt
             }
 
-            # start a job which will delete TEMP_PASSPHRASE from context_data every 10m
-            context.job_queue.run_repeating(clear_temp_passphrase, chat_id=chat_id, interval=600, first=0)
-            logger.info("Stored passphrase job")
-
         # Derive encryption key from the passphrase
         key = derive_key(passphrase, stored_salt)
 
@@ -528,10 +529,6 @@ async def get_passphrase_and_call_account_choice(update: Update, context: Contex
                 'hash': stored_hash,
                 'salt': stored_salt
             }
-
-            # start a job which will delete TEMP_PASSPHRASE from context_data every 10m
-            context.job_queue.run_repeating(clear_temp_passphrase, chat_id=chat_id, interval=600, first=0)
-            logger.info("Stored passphrase job")
 
         # Derive encryption key from the passphrase
         key = derive_key(passphrase, stored_salt)
@@ -758,10 +755,6 @@ async def get_passphrase_and_call_account_search(update: Update, context: Contex
                 'salt': stored_salt
             }
 
-            # start a job which will delete TEMP_PASSPHRASE from context_data every 10m
-            context.job_queue.run_repeating(clear_temp_passphrase, chat_id=chat_id, interval=600, first=0)
-            logger.info("Stored passphrase job")
-
         # Derive encryption key from the passphrase
         context.chat_data[TEMP_KEY] = derive_key(passphrase, stored_salt)
         del passphrase
@@ -832,7 +825,8 @@ async def stop_nested(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Okay, bye.")
+    await update.message.reply_text("Okay, Ciao.")
+    context.chat_data.clear()
 
     return ConversationHandler.END
 
@@ -953,7 +947,7 @@ def main():
                         passphrase_handler,
                         account_search_handler]
         },
-        fallbacks=[]
+        fallbacks=[CommandHandler("stop", stop)]
     )
     application.add_handler(main_handler)
 
