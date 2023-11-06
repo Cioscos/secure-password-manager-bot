@@ -782,7 +782,7 @@ async def get_account_name_and_search(update: Update, context: ContextTypes.DEFA
         account.user_name = decrypt(account.user_name, context.chat_data[TEMP_KEY])
         account.password = decrypt(account.password, context.chat_data[TEMP_KEY])
 
-        if fuzz.token_sort_ratio(account_name, account.name) > 70:
+        if fuzz.token_sort_ratio(account_name, account.name) > 57:
             valid_accounts.append(account)
 
     reply_markup = generate_account_list_keyboard(valid_accounts)
