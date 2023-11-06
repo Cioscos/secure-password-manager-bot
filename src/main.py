@@ -761,7 +761,8 @@ async def get_passphrase_and_call_account_search(update: Update, context: Contex
         del passphrase
 
         await update.message.reply_text("Inserisci il nome dell'account che hai memorizzato.\n\n"
-                                        "Il nome dell'account *può* anche non essere preciso.",
+                                        "Il nome dell'account *può* anche non essere preciso.\n\n"
+                                        "Premi /stop per tornare al menù principale",
                                         parse_mode=ParseMode.MARKDOWN)
         return ASK_SERVICE_NAME
 
@@ -781,7 +782,7 @@ async def get_account_name_and_search(update: Update, context: ContextTypes.DEFA
         account.user_name = decrypt(account.user_name, context.chat_data[TEMP_KEY])
         account.password = decrypt(account.password, context.chat_data[TEMP_KEY])
 
-        if fuzz.token_sort_ratio(account_name, account.name) > 55:
+        if fuzz.token_sort_ratio(account_name, account.name) > 35:
             valid_accounts.append(account)
 
     reply_markup = generate_account_list_keyboard(valid_accounts)
@@ -860,7 +861,8 @@ def main():
                 MessageHandler(filters.TEXT & ~filters.COMMAND,
                                get_password_decision_from_query_call_right_password_handler)],
             GENERATE_PASSWORD_TYPE_CHOICE: [generate_password_conv_handler],
-            ASK_PASSPHRASE_INSERT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_manual_password_and_ask_passphrase)],
+            ASK_PASSPHRASE_INSERT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, get_manual_password_and_ask_passphrase)],
             INSERT_USER_CHOSEN_PASSWORD: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_passphrase_and_save_account)]
         },
@@ -875,7 +877,8 @@ def main():
         name='accounts_handler_v1',
         entry_points=[CommandHandler('accounts', accounts_callback)],
         states={
-            ASK_PASSPHRASE_READ: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_passphrase_and_call_account_choice)],
+            ASK_PASSPHRASE_READ: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, get_passphrase_and_call_account_choice)],
             ACCOUNT_CHOICE: [CallbackQueryHandler(get_callback_data_from_account_button_call_account_detail)],
             ACCOUNT_DETAIL: [CallbackQueryHandler(get_callback_data_from_detail_buttons_call_actions)]
         },
