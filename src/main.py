@@ -66,6 +66,7 @@ CALLBACK_ACCOUNT_NAME = 'selected_account'
 
 TEMP_KEY = 'temp_key'
 TEMP_PASSPHRASE = 'passphrase'
+TEMP_VALID_RESULTS = 'temp_valid_results'
 
 # State definitions for top-level conv handler
 MAIN_MENU, ADD_ACCOUNT, SHOW_ACCOUNT, DELETE_ACCOUNT = map(chr, range(4))
@@ -592,7 +593,7 @@ async def get_callback_data_from_account_button_call_account_detail(update: Upda
                                        reply_markup=reply_markup)
 
         # go to get_callback_data_from_detail_buttons_call_actions
-        return ACCOUNT_DETAIL
+        return ACCOUNT_ACTIONS
 
     elif data == "prev_page":
         if context.chat_data[CURRENT_ACCOUNT_PAGE] == 0:
@@ -788,9 +789,31 @@ async def get_account_name_and_search(update: Update, context: ContextTypes.DEFA
         if fuzz.token_set_ratio(account_name, account.name) > 55:
             valid_accounts.append(account)
 
+    context.chat_data[TEMP_VALID_RESULTS] = valid_accounts
     reply_markup = generate_account_list_keyboard(valid_accounts, draw_navigation_buttons=False)
 
     await update.message.reply_text("Sono stati trovati i seguenti accounts:", reply_markup=reply_markup)
+
+    return ACCOUNT_DETAIL
+
+
+async def get_callback_data_from_detail_buttons_call_actions_search(update: Update,
+                                                                    context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    data = query.data
+
+    if data == 'delete':
+        current_account_id = context.chat_data[CURRENT_ACCOUNT_ID_SELECTED]
+        delete_account_by_id(current_account_id)
+        await query.answer("Account rimosso")
+
+    # Update the InlineKeyboard with the new page data
+    reply_markup = generate_account_list_keyboard(context.chat_data.get(TEMP_VALID_RESULTS),
+                                                  draw_navigation_buttons=False)
+
+    await query.answer()
+    await query.edit_message_text('Che account vuoi aprire?\n\nPremi /stop per tornare al menù principale',
+                                  reply_markup=reply_markup)
 
     return ACCOUNT_DETAIL
 
@@ -883,7 +906,7 @@ def main():
             ASK_PASSPHRASE_READ: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_passphrase_and_call_account_choice)],
             ACCOUNT_CHOICE: [CallbackQueryHandler(get_callback_data_from_account_button_call_account_detail)],
-            ACCOUNT_DETAIL: [CallbackQueryHandler(get_callback_data_from_detail_buttons_call_actions)]
+            ACCOUNT_ACTIONS: [CallbackQueryHandler(get_callback_data_from_detail_buttons_call_actions)]
         },
         fallbacks=[CommandHandler("stop", stop_nested)],
         map_to_parent={
@@ -909,7 +932,8 @@ def main():
             ASK_PASSPHRASE_READ: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_passphrase_and_call_account_search)],
             ASK_SERVICE_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_account_name_and_search)],
-            ACCOUNT_DETAIL: [CallbackQueryHandler(get_callback_data_from_account_button_call_account_detail)]
+            ACCOUNT_DETAIL: [CallbackQueryHandler(get_callback_data_from_account_button_call_account_detail)],
+            ACCOUNT_ACTIONS: [CallbackQueryHandler(get_callback_data_from_detail_buttons_call_actions_search)]
         },
         map_to_parent={
             STOPPING: MAIN_MENU
