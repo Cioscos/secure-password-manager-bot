@@ -103,35 +103,6 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Log the error before we do anything else, so we can see it even if something breaks.
     logger.error(f"Exception while handling an update: {context.error}")
 
-    # traceback.format_exception returns the usual python message about an exception, but as a
-    # list of strings rather than a single string, so we have to join them together.
-    # tb_list = traceback.format_exception(None, context.error, context.error.__traceback__)
-    # tb_string = "".join(tb_list)
-    #
-    # # Split the traceback into smaller parts
-    # tb_parts = [tb_string[i: i + 4096] for i in range(0, len(tb_string), 4096)]
-    #
-    # # Build the message with some markup and additional information about what happened.
-    # update_str = update.to_dict() if isinstance(update, Update) else str(update)
-    # base_message = (
-    #     f"An exception was raised while handling an update\n"
-    #     f"<pre>update = {html.escape(json.dumps(update_str, indent=2, ensure_ascii=False))}"
-    #     "</pre>\n\n"
-    #     f"<pre>context.chat_data = {html.escape(str(context.chat_data))}</pre>\n\n"
-    #     f"<pre>context.user_data = {html.escape(str(context.user_data))}</pre>\n\n"
-    # )
-    #
-    # # Send base message
-    # await context.bot.send_message(
-    #     chat_id=keyring_get('DevId'), text=base_message, parse_mode=ParseMode.HTML
-    # )
-    #
-    # # Send each part of the traceback as a separate message
-    # for part in tb_parts:
-    #     await context.bot.send_message(
-    #         chat_id=keyring_get('DevId'), text=f"<pre>{html.escape(part)}</pre>", parse_mode=ParseMode.HTML
-    #     )
-
 
 async def send_welcome_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     welcome_message: str = (f"Ciao {update.effective_user.name}!\n\n"
@@ -563,13 +534,14 @@ async def get_passphrase_and_call_account_choice(update: Update, context: Contex
         key = derive_key(passphrase, stored_salt)
         context.chat_data[TEMP_KEY] = key
         del passphrase
+        del key
 
         # Get one page of accounts associated with the user in the DB
         accounts: List[Account] = get_accounts_for_chat_id(chat_id)
 
         for account in accounts:
-            account.user_name = decrypt(account.user_name, key)
-            account.password = decrypt(account.password, key)
+            account.user_name = decrypt(account.user_name, context.chat_data[TEMP_KEY])
+            account.password = decrypt(account.password, context.chat_data[TEMP_KEY])
 
         if accounts:
             if CURRENT_ACCOUNT_PAGE not in context.chat_data.keys():
@@ -726,7 +698,8 @@ async def get_passphrase_and_store_to_db(update: Update, context: ContextTypes.D
 async def stop_nested(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("Comando stoppato")
 
-    context.chat_data.pop(TEMP_KEY, None)
+    context.chat_data.pop(TEMP_KEY)
+    context.chat_data.pop(CURRENT_ACCOUNT_PAGE)
 
     await send_welcome_message(update, context)
 
