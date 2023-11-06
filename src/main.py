@@ -698,8 +698,8 @@ async def get_passphrase_and_store_to_db(update: Update, context: ContextTypes.D
 async def stop_nested(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("Comando stoppato")
 
-    context.chat_data.pop(TEMP_KEY)
-    context.chat_data.pop(CURRENT_ACCOUNT_PAGE)
+    context.chat_data.pop(TEMP_KEY, None)
+    context.chat_data.pop(CURRENT_ACCOUNT_PAGE, None)
 
     await send_welcome_message(update, context)
 
