@@ -157,14 +157,13 @@ def get_accounts_for_chat_id(chat_id: int, page: Optional[int] = 0, page_size: O
     '''
     parameters: Union[Tuple[int], Tuple[int, int], Tuple[int, int, int]]
 
-    if page and page_size:
+    if page_size != 0:
         # Calculate the starting point based on the page number
         offset = page * page_size
         query += ''' LIMIT ? OFFSET ?'''
         parameters = (chat_id, page_size, offset)
     else:
         parameters = (chat_id,)
-
 
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()

@@ -776,7 +776,7 @@ async def get_account_name_and_search(update: Update, context: ContextTypes.DEFA
     account_name = update.message.text
     valid_accounts: List[Account] = []
 
-    accounts: List[Account] = get_accounts_for_chat_id(chat_id)
+    accounts: List[Account] = get_accounts_for_chat_id(chat_id, page_size=0)
 
     for account in accounts:
         account.user_name = decrypt(account.user_name, context.chat_data[TEMP_KEY])
