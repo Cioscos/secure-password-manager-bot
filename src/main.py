@@ -712,6 +712,12 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 
+async def default_inline_query_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer(
+        "Hai usato un bottone di una conversazione vecchia. Avvia nuovamente il comando per interagire con il bot.")
+
+
 def main():
     # Initialize the keyring
     if not keyring_initialize():
@@ -805,6 +811,10 @@ def main():
         fallbacks=[]
     )
     application.add_handler(main_handler)
+
+    # Manage the pressing of inline buttons outside the conversation
+    inline_button_handler = CallbackQueryHandler(default_inline_query_button_handler)
+    application.add_handler(inline_button_handler)
 
     # Start the bot polling
     application.run_polling(allowed_updates=Update.ALL_TYPES)
