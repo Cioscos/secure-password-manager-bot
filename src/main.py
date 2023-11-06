@@ -901,7 +901,7 @@ def main():
         entry_points=[CommandHandler('search', search_callback)],
         states={
             ASK_PASSPHRASE_READ: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, get_passphrase_and_call_account_choice)],
+                MessageHandler(filters.TEXT & ~filters.COMMAND, get_passphrase_and_call_account_search)],
             ASK_SERVICE_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_account_name_and_search)],
             ACCOUNT_DETAIL: [CallbackQueryHandler(get_callback_data_from_account_button_call_account_detail)]
         },
