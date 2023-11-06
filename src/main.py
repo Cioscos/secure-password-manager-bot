@@ -571,6 +571,7 @@ async def get_callback_data_from_account_button_call_account_detail(update: Upda
     query = update.callback_query
     data = query.data
     chat_id = update.effective_chat.id
+    message_id = update.effective_message.message_id
 
     if data.startswith(CALLBACK_ACCOUNT_NAME):
         await query.answer()
@@ -589,8 +590,9 @@ async def get_callback_data_from_account_button_call_account_detail(update: Upda
                               InlineKeyboardButton("Cancella 🗑", callback_data="delete")]
         reply_markup = InlineKeyboardMarkup([navigation_buttons])
 
-        await context.bot.edit_message_text(chat_id, account_string, parse_mode=ParseMode.MARKDOWN,
-                                       reply_markup=reply_markup)
+        await context.bot.edit_message_text(account_string, chat_id=chat_id, message_id=message_id,
+                                            parse_mode=ParseMode.MARKDOWN,
+                                            reply_markup=reply_markup)
 
         # go to get_callback_data_from_detail_buttons_call_actions
         return ACCOUNT_ACTIONS
