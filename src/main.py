@@ -823,9 +823,9 @@ async def stop_nested(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
     context.chat_data.pop(TEMP_KEY, None)
     context.chat_data.pop(CURRENT_ACCOUNT_PAGE, None)
+    context.chat_data.pop(TEMP_VALID_RESULTS, None)
 
     await send_welcome_message(update, context)
-
     return STOPPING
 
 
