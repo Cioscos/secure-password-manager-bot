@@ -251,3 +251,25 @@ def delete_account_by_id(account_id: str) -> None:
         conn.close()
     except sqlite3.DatabaseError:
         raise sqlite3.DatabaseError("An error occurred while trying to delete the account.")
+
+
+def get_users_id() -> List[int]:
+    """
+    Get all the chat_ids stored in the DB
+
+    :return: A list of int of chat_id
+    """
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+    SELECT chat_id
+    FROM users
+    ''')
+
+    result = cursor.fetchall()
+    conn.close()
+
+    chat_ids: List[int] = [row[0] for row in result]
+
+    return chat_ids

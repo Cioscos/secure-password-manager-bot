@@ -842,6 +842,11 @@ async def default_inline_query_button_handler(update: Update, context: ContextTy
         "Hai usato un bottone di una conversazione vecchia. Avvia nuovamente il comando per interagire con il bot.")
 
 
+async def post_stop_callback(application: Application) -> None:
+    for chat_id in get_users_id():
+        await application.bot.send_message(chat_id, "🔴 The bot was switched off... someone switched off the power 🔴")
+
+
 def main():
     # Initialize the keyring
     if not keyring_initialize():
@@ -853,7 +858,10 @@ def main():
     # Initialize the Pickle database
     persistence = PicklePersistence(filepath='DB.pkl')
 
-    application = Application.builder().token(keyring_get('Telegram')).persistence(persistence).build()
+    application = (Application.builder()
+                   .token(keyring_get('Telegram'))
+                   .post_stop(post_stop_callback)
+                   .persistence(persistence).build())
 
     application.add_error_handler(error_handler)
 
