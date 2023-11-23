@@ -677,12 +677,20 @@ def generate_account_list_keyboard(accounts: List[Account],
 
 
 async def passphrase_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Inserisci una passphrase per criptare i tuoi dati.\n\n"
-                                    "L'inserimento di una passphrase è obbligatoria per i fini di utilizzo\n"
-                                    "dell'applicazione. Più lunga è la passphrase più sicura sarà la crittografia")
+    if not is_user_registered(update.message.chat_id):
+        await update.message.reply_text("Inserisci una passphrase per criptare i tuoi dati.\n\n"
+                                        "L'inserimento di una passphrase è obbligatoria per i fini di utilizzo\n"
+                                        "dell'applicazione. Più lunga è la passphrase più sicura sarà la crittografia")
 
-    # go to get_passphrase_and_store_to_db
-    return PASSPHRASE_SAVING
+        # go to get_passphrase_and_store_to_db
+        return PASSPHRASE_SAVING
+
+    else:
+        await update.message.reply_text(
+            "Sei già registrato! Cerca il messaggio della passphrase se non te la ricordi più.\n"
+            "Se l'hai cancellato mi dispiace, ma per ora non esiste un metodo di recupero della passphrase.")
+
+        return ConversationHandler.END
 
 
 async def get_passphrase_and_store_to_db(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -866,8 +874,6 @@ def main():
     application.add_error_handler(error_handler)
 
     generate_password_conv_handler = ConversationHandler(
-        persistent=True,
-        name='generate_password_handler_v1',
         entry_points=[CallbackQueryHandler(get_callback_data_from_psw_options_and_save_password)],
         states={
             INSERT_PSW_LENGHT: [
@@ -885,8 +891,6 @@ def main():
     )
 
     new_account_handler = ConversationHandler(
-        persistent=True,
-        name='new_account_handler_v1',
         entry_points=[CommandHandler('newAccount', new_account_callback)],
         states={
             INSERT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name_ask_username_handler)],
@@ -908,8 +912,6 @@ def main():
     )
 
     accounts_handler = ConversationHandler(
-        persistent=True,
-        name='accounts_handler_v1',
         entry_points=[CommandHandler('accounts', accounts_callback)],
         states={
             ASK_PASSPHRASE_READ: [
@@ -924,8 +926,6 @@ def main():
     )
 
     passphrase_handler = ConversationHandler(
-        persistent=True,
-        name='passphrase_handler_v1',
         entry_points=[CommandHandler('passphrase', passphrase_callback)],
         states={
             PASSPHRASE_SAVING: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_passphrase_and_store_to_db)]
@@ -934,8 +934,6 @@ def main():
     )
 
     account_search_handler = ConversationHandler(
-        persistent=True,
-        name='account_search_handler_v1',
         entry_points=[CommandHandler('search', search_callback)],
         states={
             ASK_PASSPHRASE_READ: [
@@ -951,8 +949,6 @@ def main():
     )
 
     main_handler = ConversationHandler(
-        persistent=True,
-        name='main_handler_v1',
         entry_points=[CommandHandler('start', start_handler)],
         states={
             MAIN_MENU: [new_account_handler,
