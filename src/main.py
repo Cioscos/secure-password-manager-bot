@@ -1,8 +1,3 @@
-import secrets
-import string
-from typing import List, Any
-from warnings import filterwarnings
-
 from telegram import Update, ReplyKeyboardMarkup, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -15,6 +10,8 @@ from telegram.ext import (
 from telegram.helpers import escape_markdown
 from telegram.warnings import PTBUserWarning
 from thefuzz import fuzz
+from typing import List, Any
+from warnings import filterwarnings
 
 from account_repository import *
 from crypto_service import *
@@ -452,31 +449,53 @@ def generate_password_options_keyboard(lunghezza: int = 10, maiuscole: bool = Fa
     return InlineKeyboardMarkup(keyboard)
 
 
+import string
+import secrets
+
+
 def generate_password(lunghezza: int, maiuscole: bool, minuscole: bool, numerici: bool, speciali: bool,
                       duplicati: bool) -> str:
-    # Inizializza l'alfabeto vuoto
-    alfabeto = ''
+    """
+    Genera una password sicura seguendo i criteri specificati.
 
-    # Aggiungi le diverse categorie di caratteri all'alfabeto, se richiesto
+    :param lunghezza: La lunghezza desiderata della password.
+    :param maiuscole: Includi lettere maiuscole se True.
+    :param minuscole: Includi lettere minuscole se True.
+    :param numerici: Includi numeri se True.
+    :param speciali: Includi caratteri speciali se True.
+    :param duplicati: Consenti duplicati nella password se True.
+    :return: Una stringa che rappresenta la password generata.
+    :raises ValueError: Se non ci sono abbastanza caratteri unici per soddisfare la richiesta senza duplicati.
+    """
+    alfabeto = ''
+    password_base = []
+
     if maiuscole:
         alfabeto += string.ascii_uppercase
+        password_base.append(secrets.choice(string.ascii_uppercase))
     if minuscole:
         alfabeto += string.ascii_lowercase
+        password_base.append(secrets.choice(string.ascii_lowercase))
     if numerici:
         alfabeto += string.digits
+        password_base.append(secrets.choice(string.digits))
     if speciali:
         alfabeto += string.punctuation
+        password_base.append(secrets.choice(string.punctuation))
 
-    if duplicati:
-        password = ''.join(secrets.choice(alfabeto) for _ in range(lunghezza))
-    else:
-        if len(alfabeto) < lunghezza:
-            raise ValueError(
-                "Non ci sono abbastanza caratteri unici per soddisfare la lunghezza richiesta senza duplicati.")
-        alfabeto_list = list(alfabeto)
-        secrets.SystemRandom().shuffle(alfabeto_list)
-        password = ''.join(alfabeto_list[:lunghezza])
+    if not duplicati and len(alfabeto) < lunghezza:
+        raise ValueError(
+            "Non ci sono abbastanza caratteri unici per soddisfare la lunghezza richiesta senza duplicati.")
 
+    # Completa la lunghezza della password selezionando casualmente altri caratteri dall'alfabeto
+    while len(password_base) < lunghezza:
+        password_base.append(secrets.choice(alfabeto))
+
+    # Mescola la password base per non avere un ordine prevedibile
+    secrets.SystemRandom().shuffle(password_base)
+
+    # Unisce i caratteri per formare la password finale
+    password = ''.join(password_base[:lunghezza])
     return password
 
 
