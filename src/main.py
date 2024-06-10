@@ -1,5 +1,9 @@
+from typing import List, Any
+from warnings import filterwarnings
+
 from telegram import Update, ReplyKeyboardMarkup, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.constants import ParseMode
+from telegram.error import BadRequest, TelegramError
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -10,8 +14,6 @@ from telegram.ext import (
 from telegram.helpers import escape_markdown
 from telegram.warnings import PTBUserWarning
 from thefuzz import fuzz
-from typing import List, Any
-from warnings import filterwarnings
 
 from account_repository import *
 from crypto_service import *
@@ -871,7 +873,11 @@ async def default_inline_query_button_handler(update: Update, context: ContextTy
 
 async def post_stop_callback(application: Application) -> None:
     for chat_id in get_users_id():
-        await application.bot.send_message(chat_id, "🔴 The bot was switched off... someone switched off the power 🔴")
+        try:
+            await application.bot.send_message(chat_id,
+                                               "🔴 The bot was switched off... someone switched off the power 🔴")
+        except (BadRequest, TelegramError) as e:
+            logger.error(f"CHAT_ID: {chat_id} Telegram error stopping the bot: {e}")
 
 
 def main():
