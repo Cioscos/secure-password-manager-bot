@@ -172,6 +172,7 @@ async def get_username_ask_password_selection_handler(update: Update, context: C
 
     # Create inline keyboard
     reply_keyboard: List[List[str]] = [['Genera una password', 'Inserisci una password']]
+    # TODO: Understand if there is a way to delete this keyboard
     reply_markup = ReplyKeyboardMarkup(
         reply_keyboard,
         resize_keyboard=True,
@@ -206,7 +207,7 @@ async def get_password_decision_from_query_call_right_password_handler(update: U
 
         reply_markup = generate_password_options_keyboard(**options)
         await update.message.reply_text("Scegli le opzioni di generazione della password\n\n"
-                                        "Premi /stop per tornare al menù principale", reply_markup=reply_markup)
+                                        "Premi /stop per tornare al menù principale", reply_markup=reply_markup, )
 
         # go to get_callback_data_from_psw_options_and_save_password
         return GENERATE_PASSWORD_TYPE_CHOICE
@@ -335,6 +336,9 @@ async def get_callback_data_from_generate_new_password_or_confirm(update: Update
     elif data == 'confirm_password':
         account: Account = context.chat_data[TEMP_SAVED_ACCOUNT]
         account.password = context.chat_data['temp_password']
+
+        # Delete the message with the chosen password
+        await context.bot.delete_message(chat_id, message_id)
 
         if not context.chat_data.get(TEMP_PASSPHRASE):
             await context.bot.send_message(chat_id, "Inserisci la passphrase")
