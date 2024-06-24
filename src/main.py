@@ -1,7 +1,8 @@
 from typing import List, Any
 from warnings import filterwarnings
 
-from telegram import Update, ReplyKeyboardMarkup, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, ReplyKeyboardMarkup, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, \
+    ReplyKeyboardRemove
 from telegram.constants import ParseMode
 from telegram.error import BadRequest, TelegramError
 from telegram.ext import (
@@ -172,7 +173,6 @@ async def get_username_ask_password_selection_handler(update: Update, context: C
 
     # Create inline keyboard
     reply_keyboard: List[List[str]] = [['Genera una password', 'Inserisci una password']]
-    # TODO: Understand if there is a way to delete this keyboard
     reply_markup = ReplyKeyboardMarkup(
         reply_keyboard,
         resize_keyboard=True,
@@ -205,6 +205,8 @@ async def get_password_decision_from_query_call_right_password_handler(update: U
         # Save default options in chat data
         context.chat_data[PSW_OPTIONS] = options
 
+        await update.effective_message.reply_text('', reply_markup=ReplyKeyboardRemove())
+
         reply_markup = generate_password_options_keyboard(**options)
         await update.message.reply_text("Scegli le opzioni di generazione della password\n\n"
                                         "Premi /stop per tornare al menù principale", reply_markup=reply_markup, )
@@ -213,6 +215,9 @@ async def get_password_decision_from_query_call_right_password_handler(update: U
         return GENERATE_PASSWORD_TYPE_CHOICE
 
     elif data == 'Inserisci una password':
+
+        await update.effective_message.reply_text('', reply_markup=ReplyKeyboardRemove())
+
         await update.message.reply_text("Inserisci la password che più preferisci per il tuo account\n\n"
                                         "Premi /stop per tornare al menù principale")
 
