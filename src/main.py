@@ -209,8 +209,6 @@ async def get_password_decision_from_query_call_right_password_handler(update: U
         # Save default options in chat data
         context.chat_data[PSW_OPTIONS] = options
 
-        await update.effective_message.reply_text('', reply_markup=ReplyKeyboardRemove())
-
         reply_markup = generate_password_options_keyboard(**options)
         await update.message.reply_text("Scegli le opzioni di generazione della password\n\n"
                                         "Premi /stop per tornare al menù principale", reply_markup=reply_markup)
