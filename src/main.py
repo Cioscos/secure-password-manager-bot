@@ -193,6 +193,10 @@ async def get_password_decision_from_query_call_right_password_handler(update: U
     data: str = update.message.text
 
     if data == 'Genera una password':
+
+        message = await update.effective_message.reply_text('.', reply_markup=ReplyKeyboardRemove())
+        await message.delete()
+
         # Generates default option values
         options = {
             'lunghezza': 10,
@@ -209,12 +213,15 @@ async def get_password_decision_from_query_call_right_password_handler(update: U
 
         reply_markup = generate_password_options_keyboard(**options)
         await update.message.reply_text("Scegli le opzioni di generazione della password\n\n"
-                                        "Premi /stop per tornare al menù principale", reply_markup=reply_markup, )
+                                        "Premi /stop per tornare al menù principale", reply_markup=reply_markup)
 
         # go to get_callback_data_from_psw_options_and_save_password
         return GENERATE_PASSWORD_TYPE_CHOICE
 
     elif data == 'Inserisci una password':
+
+        message = await update.effective_message.reply_text('.', reply_markup=ReplyKeyboardRemove())
+        await message.delete()
 
         await update.effective_message.reply_text('', reply_markup=ReplyKeyboardRemove())
 
