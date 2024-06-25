@@ -223,8 +223,6 @@ async def get_password_decision_from_query_call_right_password_handler(update: U
         message = await update.effective_message.reply_text('.', reply_markup=ReplyKeyboardRemove())
         await message.delete()
 
-        await update.effective_message.reply_text('', reply_markup=ReplyKeyboardRemove())
-
         await update.message.reply_text("Inserisci la password che più preferisci per il tuo account\n\n"
                                         "Premi /stop per tornare al menù principale")
 
