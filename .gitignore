@@ -37,8 +37,5 @@ env/
 keys/
 *.dat
 
-# Lock files
-uv.lock
-
 # Temporary output
 repomix-output.md
