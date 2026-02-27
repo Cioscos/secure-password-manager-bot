@@ -6,5 +6,5 @@ dependencies = [
     "python-telegram-bot[job-queue]",
     "cryptography",
     "thefuzz",
-    "python-Levenshtein"
+    "python-Levenshtein",
 ]
