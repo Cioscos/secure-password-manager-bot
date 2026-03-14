@@ -138,6 +138,7 @@ EDIT_ACCOUNT_FIELD_CHOICE = 19
 EDIT_ACCOUNT_NAME = 20
 EDIT_ACCOUNT_USERNAME = 21
 EDIT_ACCOUNT_PASSWORD_METHOD = 22
+EDIT_ACCOUNT_INSERT_PASSWORD = 26
 
 # Change passphrase sub-flow states
 CHANGE_PASSPHRASE_VERIFY_OLD = 23
@@ -1465,7 +1466,7 @@ async def edit_account_password_method(update: Update, context: ContextTypes.DEF
         await update.message.reply_text(
             "Inserisci la nuova password per questo account:"
         )
-        return EDIT_ACCOUNT_PASSWORD_METHOD  # wait for plain text in next handler level
+        return EDIT_ACCOUNT_INSERT_PASSWORD  # wait for plain text in next handler level
 
     else:
         await update.message.reply_text("Scegli una delle opzioni proposte.")
@@ -1807,8 +1808,10 @@ def main():
             ],
             EDIT_ACCOUNT_PASSWORD_METHOD: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, edit_account_password_method),
+            ],
+            GENERATE_PASSWORD_TYPE_CHOICE: [generate_password_for_edit_handler],
+            EDIT_ACCOUNT_INSERT_PASSWORD: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, edit_account_save_new_password),
-                generate_password_for_edit_handler,
             ],
         },
         fallbacks=[CommandHandler("stop", stop_nested)],
@@ -1881,8 +1884,10 @@ def main():
             ],
             EDIT_ACCOUNT_PASSWORD_METHOD: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, edit_account_password_method),
+            ],
+            GENERATE_PASSWORD_TYPE_CHOICE: [generate_password_for_edit_handler],
+            EDIT_ACCOUNT_INSERT_PASSWORD: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, edit_account_save_new_password),
-                generate_password_for_edit_handler,
             ],
         },
         map_to_parent={
