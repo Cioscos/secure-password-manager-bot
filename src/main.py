@@ -138,6 +138,7 @@ EDIT_ACCOUNT_FIELD_CHOICE = 19
 EDIT_ACCOUNT_NAME = 20
 EDIT_ACCOUNT_USERNAME = 21
 EDIT_ACCOUNT_PASSWORD_METHOD = 22
+EDIT_ACCOUNT_INSERT_PASSWORD = 26
 
 # Change passphrase sub-flow states
 CHANGE_PASSPHRASE_VERIFY_OLD = 23
@@ -1465,7 +1466,7 @@ async def edit_account_password_method(update: Update, context: ContextTypes.DEF
         await update.message.reply_text(
             "Inserisci la nuova password per questo account:"
         )
-        return EDIT_ACCOUNT_PASSWORD_METHOD  # wait for plain text in next handler level
+        return EDIT_ACCOUNT_INSERT_PASSWORD  # wait for plain text in next handler level
 
     else:
         await update.message.reply_text("Scegli una delle opzioni proposte.")
@@ -1500,6 +1501,63 @@ async def edit_account_save_new_password(update: Update, context: ContextTypes.D
     context.chat_data.pop('_edit_password_mode', None)
 
     return await _show_account_detail_after_edit(update, context)
+
+
+async def edit_confirm_generated_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """
+    Handles 'Genera di nuovo' / 'Conferma' inline buttons in the edit-account password generator.
+
+    Unlike the new-account flow, the account already exists in the DB, so we encrypt and
+    update directly using CURRENT_ACCOUNT_ID_SELECTED.
+    """
+    query: CallbackQuery = update.callback_query
+    data: str = query.data
+    await query.answer()
+    chat_id = update.effective_chat.id
+    message_id = update.effective_message.message_id
+
+    options: Dict[str, Any] = context.chat_data[PSW_OPTIONS]
+
+    if data == CALLBACK_GENERATE_NEW:
+        try:
+            generated_password = generate_password(**options)
+            context.chat_data['temp_password'] = generated_password
+
+            keyboard = [
+                [InlineKeyboardButton('Genera di nuovo', callback_data=CALLBACK_GENERATE_NEW)],
+                [InlineKeyboardButton('Conferma', callback_data=CALLBACK_CONFIRM_PASSWORD)]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await context.bot.edit_message_text(
+                f"Password generata:\n\n{generated_password}\n\nPremi /stop per tornare al menù principale",
+                chat_id, message_id,
+                reply_markup=reply_markup
+            )
+            return ACCEPT_PSW
+
+        except ValueError as e:
+            await context.bot.send_message(chat_id, str(e))
+
+    elif data == CALLBACK_CONFIRM_PASSWORD:
+        if TEMP_KEY not in context.chat_data:
+            await context.bot.send_message(chat_id, "Sessione scaduta. Reinserisci la passphrase con /accounts")
+            return ConversationHandler.END
+
+        new_password = context.chat_data['temp_password']
+        account_id = context.chat_data[CURRENT_ACCOUNT_ID_SELECTED]
+
+        encrypted_password = encrypt(new_password, context.chat_data[TEMP_KEY])
+
+        await context.bot.delete_message(chat_id, message_id)
+
+        update_account(account_id, password=encrypted_password)
+        context.chat_data.pop('_edit_password_mode', None)
+
+        return await _show_account_detail_after_edit(update, context)
+
+    else:
+        await context.bot.send_message(chat_id, "Per favore premi uno dei bottoni")
 
 
 async def _show_account_detail_after_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1742,11 +1800,12 @@ def main():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_psw_lenght_return_to_options_choice)
             ],
             OPTION_CHOICE: [CallbackQueryHandler(get_callback_data_from_psw_options_and_save_password)],
-            ACCEPT_PSW: [CallbackQueryHandler(get_callback_data_from_generate_new_password_or_confirm)],
+            ACCEPT_PSW: [CallbackQueryHandler(edit_confirm_generated_password)],
         },
         fallbacks=[CommandHandler("stop", stop_nested)],
         map_to_parent={
             STOPPING: STOPPING,
+            ACCOUNT_ACTIONS: ACCOUNT_ACTIONS,
             ConversationHandler.END: ACCOUNT_ACTIONS
         }
     )
@@ -1807,8 +1866,10 @@ def main():
             ],
             EDIT_ACCOUNT_PASSWORD_METHOD: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, edit_account_password_method),
+            ],
+            GENERATE_PASSWORD_TYPE_CHOICE: [generate_password_for_edit_handler],
+            EDIT_ACCOUNT_INSERT_PASSWORD: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, edit_account_save_new_password),
-                generate_password_for_edit_handler,
             ],
         },
         fallbacks=[CommandHandler("stop", stop_nested)],
@@ -1881,8 +1942,10 @@ def main():
             ],
             EDIT_ACCOUNT_PASSWORD_METHOD: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, edit_account_password_method),
+            ],
+            GENERATE_PASSWORD_TYPE_CHOICE: [generate_password_for_edit_handler],
+            EDIT_ACCOUNT_INSERT_PASSWORD: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, edit_account_save_new_password),
-                generate_password_for_edit_handler,
             ],
         },
         map_to_parent={
