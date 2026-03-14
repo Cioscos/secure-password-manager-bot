@@ -105,6 +105,8 @@ CALLBACK_GENERATE = 'generate'
 
 CALLBACK_ACCOUNT_NAME = 'selected_account'
 
+STOP_HINT = "\n\nPremi /stop per tornare al menù principale"
+
 MAP_CALLBACK_TO_OPTIONS_KEYS = {
     CALLBACK_PSW_LENGHT: 'lunghezza',
     CALLBACK_UPPER: 'maiuscole',
@@ -540,6 +542,7 @@ async def passphrase_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             "Inserisci una passphrase per criptare i tuoi dati.\n\n"
             "L'inserimento di una passphrase è obbligatoria per i fini di utilizzo\n"
             "dell'applicazione. Più lunga è la passphrase più sicura sarà la crittografia"
+            + STOP_HINT
         )
         return PASSPHRASE_SAVING
 
@@ -602,7 +605,7 @@ async def change_passphrase_callback(update: Update, context: ContextTypes.DEFAU
         return ConversationHandler.END
 
     await update.message.reply_text(
-        "Per procedere, inserisci la tua *passphrase attuale*:",
+        "Per procedere, inserisci la tua *passphrase attuale*:" + STOP_HINT,
         parse_mode=ParseMode.MARKDOWN
     )
     return CHANGE_PASSPHRASE_VERIFY_OLD
@@ -640,7 +643,7 @@ async def change_passphrase_verify_old(update: Update, context: ContextTypes.DEF
     del old_passphrase
 
     await update.message.reply_text(
-        "Passphrase verificata ✅\n\nInserisci la *nuova passphrase*:",
+        "Passphrase verificata ✅\n\nInserisci la *nuova passphrase*:" + STOP_HINT,
         parse_mode=ParseMode.MARKDOWN
     )
     return CHANGE_PASSPHRASE_INSERT_NEW
@@ -666,7 +669,7 @@ async def change_passphrase_insert_new(update: Update, context: ContextTypes.DEF
     del new_passphrase
 
     await update.message.reply_text(
-        "Conferma la *nuova passphrase* (riscrivila):",
+        "Conferma la *nuova passphrase* (riscrivila):" + STOP_HINT,
         parse_mode=ParseMode.MARKDOWN
     )
     return CHANGE_PASSPHRASE_CONFIRM_NEW
@@ -698,7 +701,7 @@ async def change_passphrase_confirm_new(update: Update, context: ContextTypes.DE
     if confirmation != new_passphrase:
         del confirmation
         await update.message.reply_text(
-            "❌ Le passphrase non corrispondono. Reinserisci la *nuova passphrase*:",
+            "❌ Le passphrase non corrispondono. Reinserisci la *nuova passphrase*:" + STOP_HINT,
             parse_mode=ParseMode.MARKDOWN
         )
         return CHANGE_PASSPHRASE_INSERT_NEW
@@ -778,7 +781,7 @@ async def new_account_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return await stop_nested(update, context)
 
     await update.message.reply_text(
-        "Che nome vuoi assegnare al nuovo account?\n\nPremi /stop per tornare al menù principale"
+        "Che nome vuoi assegnare al nuovo account?" + STOP_HINT
     )
     return INSERT_NAME
 
@@ -798,8 +801,8 @@ async def get_name_ask_username_handler(update: Update, context: ContextTypes.DE
 
     if is_account_name_present(message, update.message.chat_id):
         await update.message.reply_text(
-            f"L'account con il nome \"{message}\" già esiste. Inserisci uno nuovo\n\n"
-            "Premi /stop per tornare al menù principale"
+            f"L'account con il nome \"{message}\" già esiste. Inserisci uno nuovo"
+            + STOP_HINT
         )
         return await new_account_callback(update, context)
 
@@ -808,7 +811,7 @@ async def get_name_ask_username_handler(update: Update, context: ContextTypes.DE
     context.chat_data[TEMP_SAVED_ACCOUNT] = account
 
     await update.message.reply_text(
-        "Che username o email vuoi assegnare?\n\nPremi /stop per tornare al menù principale"
+        "Che username o email vuoi assegnare?" + STOP_HINT
     )
     return INSERT_USERNAME
 
@@ -837,8 +840,8 @@ async def get_username_ask_password_selection_handler(update: Update, context: C
         input_field_placeholder='Scegli cosa fare...'
     )
     await update.message.reply_text(
-        "Vuoi generare un password sicura casuale o vuoi inserire tu una password?\n\n"
-        "Premi /stop per tornare al menù principale",
+        "Vuoi generare un password sicura casuale o vuoi inserire tu una password?"
+        + STOP_HINT,
         reply_markup=reply_markup
     )
     return DECIDE_PASSWORD_METHOD
@@ -874,7 +877,7 @@ async def get_password_decision_from_query_call_right_password_handler(
 
         reply_markup = generate_password_options_keyboard(**options)
         await update.message.reply_text(
-            "Scegli le opzioni di generazione della password\n\nPremi /stop per tornare al menù principale",
+            "Scegli le opzioni di generazione della password" + STOP_HINT,
             reply_markup=reply_markup
         )
         return GENERATE_PASSWORD_TYPE_CHOICE
@@ -884,15 +887,15 @@ async def get_password_decision_from_query_call_right_password_handler(
         await message.delete()
 
         await update.message.reply_text(
-            "Inserisci la password che più preferisci per il tuo account\n\n"
-            "Premi /stop per tornare al menù principale"
+            "Inserisci la password che più preferisci per il tuo account"
+            + STOP_HINT
         )
         return ASK_PASSPHRASE_INSERT
 
     else:
         await update.message.reply_text(
-            "Rispondi scegliendo una delle due opzioni offerte dai pulsanti.\n\n"
-            "Premi /stop per tornare al menù principale"
+            "Rispondi scegliendo una delle due opzioni offerte dai pulsanti."
+            + STOP_HINT
         )
 
 
@@ -920,7 +923,7 @@ async def get_callback_data_from_psw_options_and_save_password(update: Update,
         options: Dict[str, Any] = context.chat_data[PSW_OPTIONS]
 
         if option == CALLBACK_PSW_LENGHT:
-            await context.bot.send_message(chat_id, 'Inserisci la lunghezza della password desiderata')
+            await context.bot.send_message(chat_id, 'Inserisci la lunghezza della password desiderata' + STOP_HINT)
             await query.answer()
             return INSERT_PSW_LENGHT
 
@@ -948,7 +951,7 @@ async def get_callback_data_from_psw_options_and_save_password(update: Update,
 
                 await context.bot.send_message(
                     chat_id,
-                    f"Password generata:\n\n{generated_password}\n\nPremi /stop per tornare al menù principale",
+                    f"Password generata:\n\n{generated_password}" + STOP_HINT,
                     reply_markup=reply_markup
                 )
                 return ACCEPT_PSW
@@ -959,7 +962,7 @@ async def get_callback_data_from_psw_options_and_save_password(update: Update,
 
     else:
         await context.bot.send_message(
-            chat_id, "Per favore premi uno dei bottoni\n\nPremi /stop per tornare al menù principale"
+            chat_id, "Per favore premi uno dei bottoni" + STOP_HINT
         )
 
 
@@ -982,13 +985,13 @@ async def get_psw_lenght_return_to_options_choice(update: Update, context: Conte
 
         reply_markup = generate_password_options_keyboard(**options)
         await update.message.reply_text(
-            "Scegli le opzioni di generazione della password\n\nPremi /stop per tornare al menù principale",
+            "Scegli le opzioni di generazione della password" + STOP_HINT,
             reply_markup=reply_markup
         )
         return OPTION_CHOICE
 
     except ValueError:
-        await update.message.reply_text("Impossibile convertire il valore in numero: Inserisci un valore valido")
+        await update.message.reply_text("Impossibile convertire il valore in numero: Inserisci un valore valido" + STOP_HINT)
 
     return INSERT_PSW_LENGHT
 
@@ -1025,7 +1028,7 @@ async def get_callback_data_from_generate_new_password_or_confirm(update: Update
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             await context.bot.edit_message_text(
-                f"Password generata:\n\n{generated_password}\n\nPremi /stop per tornare al menù principale",
+                f"Password generata:\n\n{generated_password}" + STOP_HINT,
                 chat_id, message_id,
                 reply_markup=reply_markup
             )
@@ -1041,13 +1044,13 @@ async def get_callback_data_from_generate_new_password_or_confirm(update: Update
         await context.bot.delete_message(chat_id, message_id)
 
         if not context.chat_data.get(TEMP_PASSPHRASE):
-            await context.bot.send_message(chat_id, "Inserisci la passphrase")
+            await context.bot.send_message(chat_id, "Inserisci la passphrase" + STOP_HINT)
             return ASK_PASSPHRASE_INSERT
         else:
             return await get_passphrase_and_save_account(update, context, manual_call=True)
 
     else:
-        await context.bot.send_message(chat_id, "Per favore premi uno dei bottoni")
+        await context.bot.send_message(chat_id, "Per favore premi uno dei bottoni" + STOP_HINT)
 
 
 async def get_manual_password_and_ask_passphrase(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1067,7 +1070,7 @@ async def get_manual_password_and_ask_passphrase(update: Update, context: Contex
     account.password = password
 
     if not context.chat_data.get(TEMP_PASSPHRASE):
-        await update.message.reply_text("Inserisci la passphrase")
+        await update.message.reply_text("Inserisci la passphrase" + STOP_HINT)
         return INSERT_USER_CHOSEN_PASSWORD
     else:
         return await get_passphrase_and_save_account(update, context, manual_call=True)
@@ -1135,7 +1138,7 @@ async def accounts_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     if is_user_registered(chat_id):
         if not context.chat_data.get(TEMP_PASSPHRASE):
-            await update.message.reply_text("Inserisci la passphrase")
+            await update.message.reply_text("Inserisci la passphrase" + STOP_HINT)
             return ASK_PASSPHRASE_READ
         else:
             return await get_passphrase_and_call_account_choice(update, context, manual_call=True)
@@ -1183,7 +1186,7 @@ async def get_passphrase_and_call_account_choice(update: Update, context: Contex
 
         reply_markup = generate_account_list_keyboard(accounts)
         await update.message.reply_text(
-            "Che account vuoi aprire?\n\nPremi /stop per tornare al menù principale",
+            "Che account vuoi aprire?" + STOP_HINT,
             reply_markup=reply_markup
         )
         return ACCOUNT_CHOICE
@@ -1226,6 +1229,7 @@ async def get_callback_data_from_account_button_call_account_detail(
             f"*Nome account:* {account.name}\n\n"
             f"*Username/email:* {decrypt(account.user_name, context.chat_data[TEMP_KEY])}\n\n"
             f"*Password:* {escape_markdown(decrypt(account.password, context.chat_data[TEMP_KEY]))}"
+            + STOP_HINT
         )
 
         context.chat_data[CURRENT_ACCOUNT_ID_SELECTED] = account_id
@@ -1258,7 +1262,7 @@ async def get_callback_data_from_account_button_call_account_detail(
     reply_markup = generate_account_list_keyboard(accounts)
     await query.answer()
     await query.edit_message_text(
-        "Che account vuoi aprire?\n\nPremi /stop per tornare al menù principale",
+        "Che account vuoi aprire?" + STOP_HINT,
         reply_markup=reply_markup
     )
     return ACCOUNT_CHOICE
@@ -1289,7 +1293,7 @@ async def get_callback_data_from_detail_buttons_call_actions(update: Update,
         reply_markup = generate_account_list_keyboard(accounts)
         await query.answer()
         await query.edit_message_text(
-            'Che account vuoi aprire?\n\nPremi /stop per tornare al menù principale',
+            'Che account vuoi aprire?' + STOP_HINT,
             reply_markup=reply_markup
         )
         return ACCOUNT_CHOICE
@@ -1302,7 +1306,7 @@ async def get_callback_data_from_detail_buttons_call_actions(update: Update,
             [InlineKeyboardButton("Password", callback_data=CALLBACK_EDIT_PASSWORD)],
         ]
         await query.edit_message_text(
-            "Quale campo vuoi modificare?",
+            "Quale campo vuoi modificare?" + STOP_HINT,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return EDIT_ACCOUNT_FIELD_CHOICE
@@ -1312,7 +1316,7 @@ async def get_callback_data_from_detail_buttons_call_actions(update: Update,
         reply_markup = generate_account_list_keyboard(accounts)
         await query.answer()
         await query.edit_message_text(
-            'Che account vuoi aprire?\n\nPremi /stop per tornare al menù principale',
+            'Che account vuoi aprire?' + STOP_HINT,
             reply_markup=reply_markup
         )
         return ACCOUNT_CHOICE
@@ -1346,7 +1350,7 @@ async def edit_account_field_choice(update: Update, context: ContextTypes.DEFAUL
     if data == CALLBACK_EDIT_NAME:
         await query.edit_message_text(
             f"Valore attuale: <b>{account.name}</b>\n\n"
-            "Inserisci il nuovo nome per l'account:",
+            "Inserisci il nuovo nome per l'account:" + STOP_HINT,
             parse_mode='HTML'
         )
         return EDIT_ACCOUNT_NAME
@@ -1355,7 +1359,7 @@ async def edit_account_field_choice(update: Update, context: ContextTypes.DEFAUL
         current_username = decrypt(account.user_name, context.chat_data[TEMP_KEY])
         await query.edit_message_text(
             f"Valore attuale: <b>{current_username}</b>\n\n"
-            "Inserisci il nuovo username / email:",
+            "Inserisci il nuovo username / email:" + STOP_HINT,
             parse_mode='HTML'
         )
         return EDIT_ACCOUNT_USERNAME
@@ -1371,7 +1375,7 @@ async def edit_account_field_choice(update: Update, context: ContextTypes.DEFAUL
         )
         await query.edit_message_text(
             f"Password attuale: <code>{current_password}</code>\n\n"
-            "Vuoi generare una password sicura o inserirne una manualmente?",
+            "Vuoi generare una password sicura o inserirne una manualmente?" + STOP_HINT,
             parse_mode='HTML'
         )
         await update.effective_chat.send_message(
@@ -1400,7 +1404,7 @@ async def edit_account_name(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     if is_account_name_present(new_name, chat_id, exclude_id=account_id):
         await update.message.reply_text(
-            f"Un account con il nome \"{new_name}\" esiste già. Scegli un nome diverso:"
+            f"Un account con il nome \"{new_name}\" esiste già. Scegli un nome diverso:" + STOP_HINT
         )
         return EDIT_ACCOUNT_NAME
 
@@ -1469,7 +1473,7 @@ async def edit_account_password_method(update: Update, context: ContextTypes.DEF
 
         reply_markup = generate_password_options_keyboard(**options)
         await update.message.reply_text(
-            "Scegli le opzioni di generazione della password\n\nPremi /stop per tornare al menù principale",
+            "Scegli le opzioni di generazione della password" + STOP_HINT,
             reply_markup=reply_markup
         )
         return GENERATE_PASSWORD_TYPE_CHOICE
@@ -1479,12 +1483,12 @@ async def edit_account_password_method(update: Update, context: ContextTypes.DEF
         await message.delete()
 
         await update.message.reply_text(
-            "Inserisci la nuova password per questo account:"
+            "Inserisci la nuova password per questo account:" + STOP_HINT
         )
         return EDIT_ACCOUNT_INSERT_PASSWORD  # wait for plain text in next handler level
 
     else:
-        await update.message.reply_text("Scegli una delle opzioni proposte.")
+        await update.message.reply_text("Scegli una delle opzioni proposte." + STOP_HINT)
         return EDIT_ACCOUNT_PASSWORD_METHOD
 
 
@@ -1545,7 +1549,7 @@ async def edit_confirm_generated_password(update: Update, context: ContextTypes.
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             await context.bot.edit_message_text(
-                f"Password generata:\n\n{generated_password}\n\nPremi /stop per tornare al menù principale",
+                f"Password generata:\n\n{generated_password}" + STOP_HINT,
                 chat_id, message_id,
                 reply_markup=reply_markup
             )
@@ -1572,7 +1576,7 @@ async def edit_confirm_generated_password(update: Update, context: ContextTypes.
         return await _show_account_detail_after_edit(update, context)
 
     else:
-        await context.bot.send_message(chat_id, "Per favore premi uno dei bottoni")
+        await context.bot.send_message(chat_id, "Per favore premi uno dei bottoni" + STOP_HINT)
 
 
 async def _show_account_detail_after_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1600,6 +1604,7 @@ async def _show_account_detail_after_edit(update: Update, context: ContextTypes.
         f"*Nome account:* {account.name}\n\n"
         f"*Username/email:* {decrypt(account.user_name, context.chat_data[TEMP_KEY])}\n\n"
         f"*Password:* {escape_markdown(decrypt(account.password, context.chat_data[TEMP_KEY]))}"
+        + STOP_HINT
     )
 
     reply_markup = _build_account_detail_keyboard()
@@ -1632,7 +1637,7 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if is_user_registered(chat_id):
         if not context.chat_data.get(TEMP_PASSPHRASE):
-            await update.message.reply_text("Inserisci la passphrase")
+            await update.message.reply_text("Inserisci la passphrase" + STOP_HINT)
             return ASK_PASSPHRASE_READ
         else:
             return await get_passphrase_and_call_account_search(update, context, manual_call=True)
@@ -1666,8 +1671,8 @@ async def get_passphrase_and_call_account_search(update: Update, context: Contex
 
     await update.message.reply_text(
         "Inserisci il nome dell'account che hai memorizzato.\n\n"
-        "Il nome dell'account *può* anche non essere preciso.\n\n"
-        "Premi /stop per tornare al menù principale",
+        "Il nome dell'account *può* anche non essere preciso."
+        + STOP_HINT,
         parse_mode=ParseMode.MARKDOWN
     )
     return ASK_SERVICE_NAME
@@ -1706,7 +1711,7 @@ async def get_account_name_and_search(update: Update, context: ContextTypes.DEFA
     context.chat_data[TEMP_VALID_RESULTS] = valid_accounts
     reply_markup = generate_account_list_keyboard(valid_accounts, draw_navigation_buttons=False)
 
-    await update.message.reply_text("Sono stati trovati i seguenti accounts:", reply_markup=reply_markup)
+    await update.message.reply_text("Sono stati trovati i seguenti accounts:" + STOP_HINT, reply_markup=reply_markup)
     return ACCOUNT_DETAIL
 
 
@@ -1738,7 +1743,7 @@ async def get_callback_data_from_detail_buttons_call_actions_search(update: Upda
             [InlineKeyboardButton("Password", callback_data=CALLBACK_EDIT_PASSWORD)],
         ]
         await query.edit_message_text(
-            "Quale campo vuoi modificare?",
+            "Quale campo vuoi modificare?" + STOP_HINT,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return EDIT_ACCOUNT_FIELD_CHOICE
@@ -1749,7 +1754,7 @@ async def get_callback_data_from_detail_buttons_call_actions_search(update: Upda
     )
     await query.answer()
     await query.edit_message_text(
-        'Che account vuoi aprire?\n\nPremi /stop per tornare al menù principale',
+        'Che account vuoi aprire?' + STOP_HINT,
         reply_markup=reply_markup
     )
     return ACCOUNT_DETAIL
