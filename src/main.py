@@ -1340,15 +1340,28 @@ async def edit_account_field_choice(update: Update, context: ContextTypes.DEFAUL
     data = query.data
     await query.answer()
 
+    account_id = context.chat_data[CURRENT_ACCOUNT_ID_SELECTED]
+    account: Account = get_account_for_id(account_id)
+
     if data == CALLBACK_EDIT_NAME:
-        await query.edit_message_text("Inserisci il nuovo nome per l'account:")
+        await query.edit_message_text(
+            f"Valore attuale: <b>{account.name}</b>\n\n"
+            "Inserisci il nuovo nome per l'account:",
+            parse_mode='HTML'
+        )
         return EDIT_ACCOUNT_NAME
 
     elif data == CALLBACK_EDIT_USERNAME:
-        await query.edit_message_text("Inserisci il nuovo username / email:")
+        current_username = decrypt(account.user_name, context.chat_data[TEMP_KEY])
+        await query.edit_message_text(
+            f"Valore attuale: <b>{current_username}</b>\n\n"
+            "Inserisci il nuovo username / email:",
+            parse_mode='HTML'
+        )
         return EDIT_ACCOUNT_USERNAME
 
     elif data == CALLBACK_EDIT_PASSWORD:
+        current_password = decrypt(account.password, context.chat_data[TEMP_KEY])
         reply_keyboard: List[List[str]] = [['Genera una password', 'Inserisci una password']]
         reply_markup = ReplyKeyboardMarkup(
             reply_keyboard,
@@ -1357,7 +1370,9 @@ async def edit_account_field_choice(update: Update, context: ContextTypes.DEFAUL
             input_field_placeholder='Scegli cosa fare...'
         )
         await query.edit_message_text(
-            "Vuoi generare una password sicura o inserirne una manualmente?"
+            f"Password attuale: <code>{current_password}</code>\n\n"
+            "Vuoi generare una password sicura o inserirne una manualmente?",
+            parse_mode='HTML'
         )
         await update.effective_chat.send_message(
             "Scegli il metodo:",
