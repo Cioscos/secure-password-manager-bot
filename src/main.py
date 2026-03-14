@@ -1805,6 +1805,7 @@ def main():
         fallbacks=[CommandHandler("stop", stop_nested)],
         map_to_parent={
             STOPPING: STOPPING,
+            ACCOUNT_ACTIONS: ACCOUNT_ACTIONS,
             ConversationHandler.END: ACCOUNT_ACTIONS
         }
     )
