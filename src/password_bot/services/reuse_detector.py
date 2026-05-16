@@ -18,11 +18,13 @@ class ReuseDetector:
         self._account_to_hmac: dict[str, str] = {}
 
     def add(self, account_id: str, account_name: str, password: str) -> None:
+        self.remove(account_id)
         h = compute_password_hmac(password, self._key)
         self._by_hmac[h][account_id] = account_name
         self._account_to_hmac[account_id] = h
 
     def add_hmac(self, account_id: str, account_name: str, password_hmac: str) -> None:
+        self.remove(account_id)
         self._by_hmac[password_hmac][account_id] = account_name
         self._account_to_hmac[account_id] = password_hmac
 

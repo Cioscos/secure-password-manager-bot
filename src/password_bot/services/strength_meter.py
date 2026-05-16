@@ -17,7 +17,9 @@ class StrengthResult:
 
 class StrengthMeter:
     def evaluate(self, password: str) -> StrengthResult:
-        r = zxcvbn(password or "")
+        if not password:
+            return StrengthResult(score=0, crack_time_display="", suggestions=[], warning="")
+        r = zxcvbn(password)
         feedback = r.get("feedback") or {}
         crack_times = r.get("crack_times_display", {})
         return StrengthResult(

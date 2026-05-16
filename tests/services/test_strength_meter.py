@@ -22,3 +22,17 @@ def test_strong_password(meter: StrengthMeter):
 def test_returns_suggestions(meter: StrengthMeter):
     r = meter.evaluate("abc")
     assert isinstance(r.suggestions, list)
+
+
+def test_empty_password_returns_zero_score(meter: StrengthMeter):
+    r = meter.evaluate("")
+    assert r.score == 0
+    assert r.crack_time_display == ""
+    assert r.suggestions == []
+    assert r.warning == ""
+
+
+def test_none_like_empty(meter: StrengthMeter):
+    # `evaluate("")` is the contract; this just exercises the guard explicitly.
+    r = meter.evaluate("")
+    assert isinstance(r.warning, str)
