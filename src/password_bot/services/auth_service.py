@@ -105,7 +105,6 @@ class AuthService:
         new_hash = self._kdf.hash_passphrase(new)
         new_salt = _derive_salt_from_hash(new_hash)
         new_key = self._kdf.derive_key(new, new_salt)
-        await self._users.update_passphrase(chat_id, new_hash, crypto_version=2)
         return Result.success(
             (
                 Session(

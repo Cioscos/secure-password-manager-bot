@@ -53,10 +53,24 @@ async def test_change_passphrase(auth: AuthService):
     await auth.register(chat_id=1, name="me", passphrase="hunter2")
     r = await auth.change_passphrase(chat_id=1, current="hunter2", new="newpass")
     assert r.ok
+    # Two-phase: commit AFTER simulated rotation succeeds.
+    await auth.commit_passphrase_change(chat_id=1, new_passphrase="newpass")
     bad = await auth.unlock(chat_id=1, passphrase="hunter2")
     good = await auth.unlock(chat_id=1, passphrase="newpass")
     assert not bad.ok
     assert good.ok
+
+
+@pytest.mark.asyncio
+async def test_change_passphrase_without_commit_keeps_old(auth: AuthService):
+    await auth.register(chat_id=1, name="me", passphrase="hunter2")
+    r = await auth.change_passphrase(chat_id=1, current="hunter2", new="newpass")
+    assert r.ok
+    # No commit yet -> old passphrase must still unlock
+    still_works = await auth.unlock(chat_id=1, passphrase="hunter2")
+    assert still_works.ok
+    new_does_not_yet = await auth.unlock(chat_id=1, passphrase="newpass")
+    assert not new_does_not_yet.ok
 
 
 @pytest.mark.asyncio
