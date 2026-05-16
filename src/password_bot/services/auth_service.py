@@ -21,6 +21,8 @@ class Session:
     aes_key: bytes
     hmac_key: bytes
     expires_at: int
+    _legacy_key: bytes | None = None  # set only during legacy unlock
+    _new_passphrase_hash: str | None = None  # set only during legacy unlock
 
 
 def _derive_salt_from_hash(passphrase_hash: str) -> bytes:
