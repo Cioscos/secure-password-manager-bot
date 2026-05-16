@@ -1,3 +1,5 @@
+BEGIN;
+
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY);
 
 CREATE TABLE IF NOT EXISTS users (
@@ -50,3 +52,5 @@ CREATE TABLE IF NOT EXISTS password_history (
 );
 
 CREATE INDEX IF NOT EXISTS idx_history_account ON password_history(account_id, replaced_at);
+
+COMMIT;

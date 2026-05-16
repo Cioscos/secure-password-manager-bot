@@ -1,5 +1,7 @@
--- Run inside a single transaction by the migrator.
+-- Wrapped in BEGIN/COMMIT below for atomicity.
 -- Users table: rename + add columns.
+
+BEGIN;
 ALTER TABLE users RENAME COLUMN salted_hash TO passphrase_hash;
 ALTER TABLE users ADD COLUMN autolock_minutes INTEGER NOT NULL DEFAULT 15;
 ALTER TABLE users ADD COLUMN autolock_reset_on_activity INTEGER NOT NULL DEFAULT 1;
@@ -45,5 +47,6 @@ CREATE TABLE IF NOT EXISTS password_history (
 );
 CREATE INDEX IF NOT EXISTS idx_history_account ON password_history(account_id, replaced_at);
 
+COMMIT;
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY);
 INSERT OR REPLACE INTO schema_version (version) VALUES (1);
