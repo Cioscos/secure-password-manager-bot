@@ -109,3 +109,59 @@ async def test_update_alert_days(repo: UserRepo):
     got = await repo.get(1)
     assert got is not None
     assert got.alert_days == 365
+
+
+@pytest.mark.asyncio
+async def test_pw_prefs_default_when_unset(repo: UserRepo):
+    from password_bot.models.pw_prefs import PwPrefs
+
+    now = int(time.time())
+    await repo.create(
+        User(
+            chat_id=7,
+            name="x",
+            passphrase_hash="h",
+            autolock_minutes=15,
+            autolock_reset_on_activity=True,
+            alert_days=180,
+            crypto_version=2,
+            legacy_salt=None,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    prefs = await repo.get_pw_prefs(7)
+    assert prefs == PwPrefs()
+
+
+@pytest.mark.asyncio
+async def test_pw_prefs_roundtrip(repo: UserRepo):
+    from password_bot.models.pw_prefs import PwPrefs
+
+    now = int(time.time())
+    await repo.create(
+        User(
+            chat_id=8,
+            name="x",
+            passphrase_hash="h",
+            autolock_minutes=15,
+            autolock_reset_on_activity=True,
+            alert_days=180,
+            crypto_version=2,
+            legacy_salt=None,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    p = PwPrefs(
+        length=32,
+        upper=False,
+        lower=True,
+        digits=True,
+        symbols=False,
+        exclude_ambiguous=True,
+        no_duplicates=True,
+    )
+    await repo.set_pw_prefs(8, p)
+    got = await repo.get_pw_prefs(8)
+    assert got == p

@@ -10,15 +10,10 @@ from telegram.ext import ContextTypes
 
 from password_bot.container import Container
 from password_bot.i18n.it import MESSAGES
-from password_bot.services.password_generator import (
-    PasswordCharset,
-    PasswordGenerator,
-    PasswordSpec,
-)
 from password_bot.services.vault_service import NewAccount
 from password_bot.state.fsm import FsmContext, Screen
 from password_bot.state.keys import ChatDataKey
-from password_bot.telegram_utils.keyboards import single_column
+from password_bot.telegram_utils.keyboards import back_menu_keyboard, single_column
 from password_bot.telegram_utils.md import escape_md
 
 
@@ -104,11 +99,17 @@ async def _ask_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def callback_generate_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()
-    gen = PasswordGenerator()
-    pw = gen.generate(PasswordSpec(length=20, charset=PasswordCharset.ALPHANUM_SYMBOLS))
-    _draft(context)["password"] = pw
+    from password_bot.handlers import password_gen
+
+    await password_gen.show_options_from_callback(update, context, return_to="account_new")
+
+
+async def accept_generated_password(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, password: str
+) -> None:
+    """Called by password_gen handler once the user accepts a generated password."""
+    _draft(context)["password"] = password
     _draft(context)["step"] = "url"
-    await update.callback_query.edit_message_text(f"Generata password lunga {len(pw)} caratteri.")
     await update.effective_chat.send_message(
         escape_md("URL? Inviami il link o /skip."),
         parse_mode=ParseMode.MARKDOWN_V2,
@@ -151,4 +152,6 @@ async def _confirm_and_save(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     acc = await container.vault.add(new, aes_key=session.aes_key, hmac_key=session.hmac_key)
     container.chat_reuse_detector(context).add(acc.id, acc.name, draft["password"])
     context.chat_data.pop(ChatDataKey.PENDING_NEW_ACCOUNT.value, None)  # type: ignore[union-attr]
-    await update.message.reply_text(MESSAGES["account_saved"])
+    await update.effective_chat.send_message(
+        MESSAGES["account_saved"], reply_markup=back_menu_keyboard(show_menu=True)
+    )

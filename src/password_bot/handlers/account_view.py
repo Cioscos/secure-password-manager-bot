@@ -126,9 +126,12 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             }
         )
         old = getattr(acc, field) if acc else None
-        old_view = f" (vecchio: {code_inline(old)})" if old and field != "password" else ""
+        if old and field != "password":
+            old_view = escape_md(" (vecchio: ") + code_inline(old) + escape_md(")")
+        else:
+            old_view = ""
         await update.effective_chat.send_message(
-            f"Nuovo {field}? /cancel per annullare.{old_view}",
+            escape_md(f"Nuovo {field}? /cancel per annullare.") + old_view,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
 

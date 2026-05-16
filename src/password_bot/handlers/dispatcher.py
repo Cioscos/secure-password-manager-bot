@@ -8,7 +8,15 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from password_bot.handlers import account_edit, account_new, auth, export
+from password_bot.handlers import (
+    account_edit,
+    account_new,
+    auth,
+    categories,
+    export,
+    inline_cmd,
+    password_gen,
+)
 from password_bot.state.fsm import FsmContext
 from password_bot.state.keys import ChatDataKey
 
@@ -38,6 +46,24 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 await update.message.delete()
             fsm.clear_pending_input()
             await export.handle_import_passphrase(update, context, text)
+            return
+        if pending["field"] == "_cat_new_name":
+            await categories.handle_pending_name(update, context)
+            return
+        if pending["field"] == "_pwgen_length":
+            await password_gen.handle_pending_length(update, context)
+            return
+        if pending["field"] == "_search_query":
+            query = (update.message.text or "").strip()
+            fsm.clear_pending_input()
+            context.args = query.split()  # type: ignore[attr-defined]
+            await inline_cmd.cmd_get(update, context)
+            return
+        if pending["field"] == "_copy_query":
+            query = (update.message.text or "").strip()
+            fsm.clear_pending_input()
+            context.args = query.split()  # type: ignore[attr-defined]
+            await inline_cmd.cmd_copy(update, context)
             return
         if await account_edit.handle_pending(update, context):
             return

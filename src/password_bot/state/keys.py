@@ -14,3 +14,5 @@ class ChatDataKey(StrEnum):
     PENDING_NEW_ACCOUNT = "pending_new_account"
     PENDING_IMPORT_FILE = "pending_import_file"
     LEGACY_SESSION_EXTRAS = "legacy_session_extras"
+    PW_GEN_DRAFT = "pw_gen_draft"
+    PW_GEN_RETURN_TO = "pw_gen_return_to"

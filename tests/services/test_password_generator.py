@@ -41,3 +41,44 @@ def test_at_least_one_of_each_class_when_symbols(gen: PasswordGenerator):
 def test_length_too_short_raises(gen: PasswordGenerator):
     with pytest.raises(ValueError):
         gen.generate(PasswordSpec(length=2, charset=PasswordCharset.ALPHANUM_SYMBOLS))
+
+
+def test_flags_only_lower(gen: PasswordGenerator):
+    pw = gen.generate(PasswordSpec(length=10, upper=False, lower=True, digits=False, symbols=False))
+    assert set(pw) <= set(string.ascii_lowercase)
+
+
+def test_exclude_ambiguous_removes_chars(gen: PasswordGenerator):
+    pw = gen.generate(
+        PasswordSpec(
+            length=64,
+            upper=True,
+            lower=True,
+            digits=True,
+            symbols=True,
+            exclude_ambiguous=True,
+        )
+    )
+    forbidden = set("0O1lI|`'\".,;: ")
+    assert not (set(pw) & forbidden)
+
+
+def test_no_duplicates_unique_chars(gen: PasswordGenerator):
+    pw = gen.generate(
+        PasswordSpec(
+            length=20, upper=True, lower=True, digits=True, symbols=True, no_duplicates=True
+        )
+    )
+    assert len(set(pw)) == 20
+
+
+def test_no_class_raises(gen: PasswordGenerator):
+    with pytest.raises(ValueError):
+        gen.generate(PasswordSpec(length=10, upper=False, lower=False, digits=False, symbols=False))
+
+
+def test_entropy_bits_positive():
+    from password_bot.services.password_generator import entropy_bits
+
+    bits = entropy_bits(PasswordSpec(length=16))
+    assert bits > 50

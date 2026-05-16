@@ -7,6 +7,7 @@ from pathlib import Path
 
 import aiosqlite
 
+from password_bot.models.pw_prefs import PwPrefs
 from password_bot.models.user import User
 from password_bot.repositories.db import connect
 
@@ -86,4 +87,19 @@ class UserRepo:
             await conn.execute(
                 "UPDATE users SET alert_days=?, updated_at=? WHERE chat_id=?",
                 (days, int(time.time()), chat_id),
+            )
+
+    async def get_pw_prefs(self, chat_id: int) -> PwPrefs:
+        async with connect(self._db_path) as conn:
+            cur = await conn.execute("SELECT pw_prefs FROM users WHERE chat_id=?", (chat_id,))
+            row = await cur.fetchone()
+            if row is None:
+                return PwPrefs()
+            return PwPrefs.from_json(row["pw_prefs"])
+
+    async def set_pw_prefs(self, chat_id: int, prefs: PwPrefs) -> None:
+        async with connect(self._db_path) as conn:
+            await conn.execute(
+                "UPDATE users SET pw_prefs=?, updated_at=? WHERE chat_id=?",
+                (prefs.to_json(), int(time.time()), chat_id),
             )

@@ -26,10 +26,12 @@ from password_bot.handlers import (
     export,
     inline_cmd,
     nav,
+    password_gen,
     settings,
 )
 from password_bot.repositories.migrator import migrate_to_latest
 from password_bot.state.keys import ChatDataKey
+from password_bot.telegram_utils.callback_data import ListPageData
 
 log = logging.getLogger(__name__)
 
@@ -47,6 +49,8 @@ class _SessionStrippingPersistence(PicklePersistence):
                 ChatDataKey.REUSE_DETECTOR.value,
                 ChatDataKey.LEGACY_SESSION_EXTRAS.value,
                 ChatDataKey.PENDING_IMPORT_FILE.value,
+                ChatDataKey.PW_GEN_DRAFT.value,
+                ChatDataKey.PW_GEN_RETURN_TO.value,
             }
         }
         await super().update_chat_data(chat_id, clean)
@@ -93,7 +97,12 @@ def build_application(config: AppConfig, *, token: str, dev_chat_id: int | None)
         log.info("Migrations applied, container built. DB: %s", config.db_path)
 
     application = (
-        ApplicationBuilder().token(token).persistence(persistence).post_init(_post_init).build()
+        ApplicationBuilder()
+        .token(token)
+        .persistence(persistence)
+        .arbitrary_callback_data(True)
+        .post_init(_post_init)
+        .build()
     )
 
     conv = ConversationHandler(
@@ -127,6 +136,14 @@ def build_application(config: AppConfig, *, token: str, dev_chat_id: int | None)
                 CallbackQueryHandler(account_view.on_callback, pattern=r"^view:"),
                 CallbackQueryHandler(settings.on_callback, pattern=r"^set:"),
                 CallbackQueryHandler(nav.on_callback, pattern=r"^nav:"),
+                CallbackQueryHandler(common.on_menu_callback, pattern=r"^menu:"),
+                CallbackQueryHandler(categories.on_callback, pattern=r"^cat:"),
+                CallbackQueryHandler(password_gen.on_callback, pattern=r"^pwgen:"),
+                CallbackQueryHandler(inline_cmd.on_account_callback, pattern=r"^acc:"),
+                CallbackQueryHandler(
+                    inline_cmd.on_list_callback,
+                    pattern=lambda d: isinstance(d, ListPageData),
+                ),
                 MessageHandler(filters.Document.ALL, export.on_document),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, dispatcher.on_text),
             ],

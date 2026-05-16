@@ -21,7 +21,7 @@ from password_bot.telegram_utils.md import escape_md
 async def cmd_export(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     session = FsmContext(context.chat_data).get_session()  # type: ignore[arg-type]
     if session is None:
-        await update.message.reply_text(MESSAGES["session_locked"])
+        await update.effective_chat.send_message(MESSAGES["session_locked"])
         return
     FsmContext(context.chat_data).set_pending_input(
         {  # type: ignore[arg-type]
@@ -29,7 +29,7 @@ async def cmd_export(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             "id": "",
         }
     )
-    await update.message.reply_text(
+    await update.effective_chat.send_message(
         escape_md("Passphrase per il file di export? (può essere diversa da quella del vault)"),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
@@ -57,9 +57,9 @@ async def handle_export_passphrase(
 async def cmd_import(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     session = FsmContext(context.chat_data).get_session()  # type: ignore[arg-type]
     if session is None:
-        await update.message.reply_text(MESSAGES["session_locked"])
+        await update.effective_chat.send_message(MESSAGES["session_locked"])
         return
-    await update.message.reply_text(
+    await update.effective_chat.send_message(
         escape_md("Inviami il file .json esportato."),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
@@ -81,7 +81,7 @@ async def on_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             "id": "",
         }
     )
-    await update.message.reply_text(
+    await update.effective_chat.send_message(
         escape_md("Passphrase del file di export?"),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
@@ -94,7 +94,7 @@ async def handle_import_passphrase(
     session = FsmContext(context.chat_data).get_session()  # type: ignore[arg-type]
     payload = context.chat_data.pop(ChatDataKey.PENDING_IMPORT_FILE.value, None)  # type: ignore[union-attr]
     if payload is None:
-        await update.message.reply_text(MESSAGES["import_invalid_file"])
+        await update.effective_chat.send_message(MESSAGES["import_invalid_file"])
         return
     try:
         report = await container.export.import_payload(
@@ -106,12 +106,12 @@ async def handle_import_passphrase(
             strategy=MergeStrategy.SKIP,
         )
     except InvalidPassphraseError:
-        await update.message.reply_text(MESSAGES["import_wrong_passphrase"])
+        await update.effective_chat.send_message(MESSAGES["import_wrong_passphrase"])
         return
     except InvalidExportFileError:
-        await update.message.reply_text(MESSAGES["import_invalid_file"])
+        await update.effective_chat.send_message(MESSAGES["import_invalid_file"])
         return
-    await update.message.reply_text(
+    await update.effective_chat.send_message(
         MESSAGES["import_done"].format(
             added=report.added,
             overwritten=report.overwritten,

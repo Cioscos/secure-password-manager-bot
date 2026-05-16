@@ -1,4 +1,4 @@
-"""Schema migrator. Detects legacy v0 schema and upgrades to v1."""
+"""Schema migrator. Detects legacy v0 schema and upgrades step-by-step to TARGET_VERSION."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 import aiosqlite
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
-TARGET_VERSION = 1
+TARGET_VERSION = 2
 
 
 async def _table_exists(conn: aiosqlite.Connection, name: str) -> bool:
@@ -33,6 +33,13 @@ async def _is_legacy(conn: aiosqlite.Connection) -> bool:
     return await _table_exists(conn, "users") and await _column_exists(conn, "users", "salted_hash")
 
 
+async def _set_version(conn: aiosqlite.Connection, version: int) -> None:
+    if not await _table_exists(conn, "schema_version"):
+        await conn.execute("CREATE TABLE schema_version (version INTEGER PRIMARY KEY)")
+    await conn.execute("DELETE FROM schema_version")
+    await conn.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))
+
+
 async def migrate_to_latest(db_path: Path) -> None:
     conn = await aiosqlite.connect(db_path)
     try:
@@ -40,15 +47,22 @@ async def migrate_to_latest(db_path: Path) -> None:
         version = await _current_version(conn)
         if version >= TARGET_VERSION:
             return
-        if await _is_legacy(conn):
-            sql = (MIGRATIONS_DIR / "002_legacy_upgrade.sql").read_text()
-        else:
-            sql = (MIGRATIONS_DIR / "001_init.sql").read_text()
-        await conn.executescript(sql)
-        if not await _table_exists(conn, "schema_version"):
-            await conn.execute("CREATE TABLE schema_version (version INTEGER PRIMARY KEY)")
-        await conn.execute("DELETE FROM schema_version")
-        await conn.execute("INSERT INTO schema_version (version) VALUES (?)", (TARGET_VERSION,))
+
+        if version < 1:
+            if await _is_legacy(conn):
+                sql = (MIGRATIONS_DIR / "002_legacy_upgrade.sql").read_text()
+            else:
+                sql = (MIGRATIONS_DIR / "001_init.sql").read_text()
+            await conn.executescript(sql)
+            await _set_version(conn, 1)
+            version = 1
+
+        if version < 2:
+            if not await _column_exists(conn, "users", "pw_prefs"):
+                sql = (MIGRATIONS_DIR / "003_user_pw_prefs.sql").read_text()
+                await conn.executescript(sql)
+            await _set_version(conn, 2)
+
         await conn.commit()
     finally:
         await conn.execute("PRAGMA foreign_keys = ON")
