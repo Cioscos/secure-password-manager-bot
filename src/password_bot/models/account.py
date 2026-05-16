@@ -6,6 +6,7 @@ from dataclasses import dataclass
 @dataclass(slots=True)
 class Account:
     """Decrypted, domain-level account."""
+
     id: str
     chat_id: int
     name: str
@@ -24,6 +25,7 @@ class Account:
 @dataclass(slots=True)
 class AccountRow:
     """Raw DB row — all secret fields still encrypted."""
+
     id: str
     chat_id: int
     name: str

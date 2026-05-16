@@ -1,4 +1,5 @@
 """Application configuration loaded from env and a base dir."""
+
 from __future__ import annotations
 
 import os
