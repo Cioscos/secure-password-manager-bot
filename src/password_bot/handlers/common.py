@@ -26,7 +26,7 @@ def _fsm(context: ContextTypes.DEFAULT_TYPE) -> FsmContext:
     return FsmContext(context.chat_data)  # type: ignore[arg-type]
 
 
-async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     fsm = _fsm(context)
     container: Container = context.application.bot_data["container"]
     user = await container.users.get(update.effective_chat.id)
@@ -36,16 +36,17 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             escape_md(MESSAGES["passphrase_setup_first"]),
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-        return
+        return 0
     if fsm.get_session() is None:
         fsm.reset_to(UNLOCK_SCREEN)
         await update.message.reply_text(
             escape_md(MESSAGES["ask_passphrase"]),
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-        return
+        return 0
     fsm.reset_to(MENU_SCREEN)
     await update.message.reply_text(MESSAGES["menu_title"], parse_mode=ParseMode.MARKDOWN_V2)
+    return 0
 
 
 async def cmd_stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

@@ -26,12 +26,18 @@ async def handle_passphrase_message(update: Update, context: ContextTypes.DEFAUL
     container: Container = context.application.bot_data["container"]
     chat_id = update.effective_chat.id
     passphrase = update.message.text or ""
+    log.info("handle_passphrase_message chat_id=%s passphrase_len=%s", chat_id, len(passphrase))
 
     # Always delete the inbound message first.
     with contextlib.suppress(Exception):
         await update.message.delete()
 
     user = await container.users.get(chat_id)
+    log.info(
+        "handle_passphrase_message user_exists=%s crypto_version=%s",
+        user is not None,
+        user.crypto_version if user else None,
+    )
     if user is None:
         # First-time setup.
         r = await container.auth.register(
@@ -54,7 +60,13 @@ async def handle_passphrase_message(update: Update, context: ContextTypes.DEFAUL
         return
 
     if user.crypto_version == 1:
+        log.info("unlock_legacy starting for chat_id=%s", chat_id)
         legacy_r = await container.migration.unlock_legacy(chat_id=chat_id, passphrase=passphrase)
+        log.info(
+            "unlock_legacy ok=%s err=%s",
+            legacy_r.ok,
+            type(legacy_r.error).__name__ if legacy_r.error else None,
+        )
         if not legacy_r.ok or legacy_r.value is None:
             await context.bot.send_message(chat_id, MESSAGES["passphrase_wrong"])
             return
@@ -63,9 +75,11 @@ async def handle_passphrase_message(update: Update, context: ContextTypes.DEFAUL
             escape_md("Sto migrando il vault…"),
             parse_mode=ParseMode.MARKDOWN_V2,
         )
+        log.info("migrate_user starting for chat_id=%s", chat_id)
         await container.migration.migrate_user(
             chat_id=chat_id, passphrase=passphrase, session=legacy_r.value
         )
+        log.info("migrate_user done for chat_id=%s", chat_id)
         _fsm(context).set_session(legacy_r.value)
         _schedule_autolock(context, chat_id, legacy_r.value.expires_at)
         await context.bot.send_message(

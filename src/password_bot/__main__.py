@@ -18,9 +18,12 @@ def _read_keyring_value(keyring_dir: Path, filename: str) -> str:
 
 
 def _setup_logging(log_path: Path) -> None:
-    handler = RotatingFileHandler(log_path, maxBytes=5_000_000, backupCount=3)
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-    logging.basicConfig(level=logging.INFO, handlers=[handler])
+    fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    file_handler = RotatingFileHandler(log_path, maxBytes=5_000_000, backupCount=3)
+    file_handler.setFormatter(fmt)
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(fmt)
+    logging.basicConfig(level=logging.INFO, handlers=[file_handler, stream_handler])
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
