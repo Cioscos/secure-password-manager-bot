@@ -36,3 +36,24 @@ def test_legacy_decrypt_roundtrip():
     ct = legacy_encrypt_inline("secret", key)
     dec = LegacyCfbDecryptor()
     assert dec.decrypt(ct, key) == "secret"
+
+
+def test_legacy_derive_key_matches_v1_format():
+    """Cross-check legacy_derive_key against an inline reimplementation of v1.
+    v1 uses base64.b64decode(salt_hex_string_from_db) as the actual PBKDF2 salt bytes."""
+    import base64 as _b64
+
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+    # Use a hex string that the real v1 might produce (32 hex chars).
+    salt_hex = "abcdef0123456789abcdef0123456789"
+    expected_salt = _b64.b64decode(salt_hex)
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=expected_salt,
+        iterations=100_000,
+    )
+    expected_key = kdf.derive(b"hunter2")
+    assert legacy_derive_key("hunter2", salt_hex) == expected_key

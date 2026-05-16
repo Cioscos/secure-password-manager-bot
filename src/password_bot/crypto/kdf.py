@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from argon2 import PasswordHasher, Type
-from argon2.exceptions import VerifyMismatchError
+from argon2.exceptions import VerificationError
 from argon2.low_level import hash_secret_raw
 
 from password_bot.config import Argon2Params
@@ -28,7 +28,7 @@ class Argon2idKdf:
     def verify(self, passphrase: str, encoded_hash: str) -> bool:
         try:
             return self._hasher.verify(encoded_hash, passphrase)
-        except VerifyMismatchError:
+        except VerificationError:
             return False
 
     def derive_key(self, passphrase: str, salt: bytes) -> bytes:

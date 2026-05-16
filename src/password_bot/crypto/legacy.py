@@ -21,12 +21,13 @@ def legacy_verify_passphrase(passphrase: str, stored_hex_hash: str, salt_hex: st
 
 
 def legacy_derive_key(passphrase: str, salt_hex: str) -> bytes:
-    """v1 derivation: salt_hex is base64-encoded before being fed to PBKDF2HMAC."""
-    salt_b64 = base64.b64encode(salt_hex.encode("utf-8"))
+    """v1 derivation: the hex-string salt from the DB is fed straight to base64.b64decode
+    (the same quirky behavior the legacy code in src/crypto_service.py uses)."""
+    salt = base64.b64decode(salt_hex)
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
-        salt=salt_b64,
+        salt=salt,
         iterations=LEGACY_PBKDF2_ITERATIONS,
     )
     return kdf.derive(passphrase.encode("utf-8"))
