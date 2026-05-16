@@ -52,14 +52,6 @@ class _SessionStrippingPersistence(PicklePersistence):
         await super().update_chat_data(chat_id, clean)
 
 
-async def _on_post_init(app: Application) -> None:
-    config: AppConfig = app.bot_data["config"]
-    await migrate_to_latest(config.db_path)
-    container = Container.build(config, dev_chat_id=app.bot_data.get("dev_chat_id"))
-    app.bot_data["container"] = container
-    log.info("Migrations applied, container built. DB: %s", config.db_path)
-
-
 async def _daily_stale_scan(context) -> None:
     container: Container = context.application.bot_data["container"]
     async with _users_iter(container) as chat_ids:
@@ -93,11 +85,16 @@ async def _users_iter(container: Container):
 
 def build_application(config: AppConfig, *, token: str, dev_chat_id: int | None) -> Application:
     persistence = _SessionStrippingPersistence(filepath=str(config.pkl_path))
+
+    async def _post_init(app: Application) -> None:
+        await migrate_to_latest(config.db_path)
+        container = Container.build(config, dev_chat_id=dev_chat_id)
+        app.bot_data["container"] = container
+        log.info("Migrations applied, container built. DB: %s", config.db_path)
+
     application = (
-        ApplicationBuilder().token(token).persistence(persistence).post_init(_on_post_init).build()
+        ApplicationBuilder().token(token).persistence(persistence).post_init(_post_init).build()
     )
-    application.bot_data["config"] = config
-    application.bot_data["dev_chat_id"] = dev_chat_id
 
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", common.cmd_start)],
