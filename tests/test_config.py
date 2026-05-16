@@ -1,4 +1,3 @@
-import os
 
 from password_bot.config import AppConfig, Argon2Params
 

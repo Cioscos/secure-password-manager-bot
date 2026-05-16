@@ -22,7 +22,7 @@ class Argon2Params:
     salt_len: int = 16
 
     @classmethod
-    def hash_params_from_env(cls) -> "Argon2Params":
+    def hash_params_from_env(cls) -> Argon2Params:
         return cls(
             memory_cost=_env_int("PB_ARGON2_M", 65536),
             time_cost=_env_int("PB_ARGON2_T", 3),
@@ -30,7 +30,7 @@ class Argon2Params:
         )
 
     @classmethod
-    def derive_params_from_env(cls) -> "Argon2Params":
+    def derive_params_from_env(cls) -> Argon2Params:
         return cls(
             memory_cost=_env_int("PB_ARGON2_DERIVE_M", 32768),
             time_cost=_env_int("PB_ARGON2_DERIVE_T", 2),
@@ -52,7 +52,7 @@ class AppConfig:
     alert_days_default: int = 180
 
     @classmethod
-    def load(cls, base_dir: Path | None = None) -> "AppConfig":
+    def load(cls, base_dir: Path | None = None) -> AppConfig:
         base = (base_dir or Path.cwd()).resolve()
         keyring_raw = os.environ.get("KEYRING")
         if not keyring_raw:
