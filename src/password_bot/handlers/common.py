@@ -103,3 +103,34 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
                 text=escape_md(MESSAGES["error_internal"]),
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
+
+
+async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = (
+        "Comandi disponibili:\n"
+        "/start — apre il bot\n"
+        "/menu — menu principale\n"
+        "/lock — blocca sessione\n"
+        "/stop — esce dalla conversazione\n"
+        "/cancel — annulla input corrente\n"
+        "/back — torna indietro\n"
+        "/add — nuovo account\n"
+        "/get NAME — cerca account\n"
+        "/copy NAME — copia password\n"
+        "/list — elenca account\n"
+        "/list_stale — password vecchie\n"
+        "/list_reused — password riusate\n"
+        "/categories — gestisci categorie\n"
+        "/export — esporta vault\n"
+        "/import — importa vault\n"
+        "/settings — impostazioni"
+    )
+    await update.message.reply_text(text)
+
+
+async def cmd_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    fsm = _fsm(context)
+    fsm.pop()
+    if fsm.depth() == 0:
+        fsm.reset_to(MENU_SCREEN)
+    await update.message.reply_text("🔙")
