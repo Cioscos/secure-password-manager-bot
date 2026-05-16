@@ -45,7 +45,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         )
         return 0
     fsm.reset_to(MENU_SCREEN)
-    await update.message.reply_text(MESSAGES["menu_title"], parse_mode=ParseMode.MARKDOWN_V2)
+    await update.message.reply_text(_menu_body(), parse_mode=ParseMode.MARKDOWN_V2)
     return 0
 
 
@@ -74,7 +74,28 @@ async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def cmd_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     fsm = _fsm(context)
     fsm.reset_to(MENU_SCREEN)
-    await update.message.reply_text(MESSAGES["menu_title"], parse_mode=ParseMode.MARKDOWN_V2)
+    await update.effective_chat.send_message(_menu_body(), parse_mode=ParseMode.MARKDOWN_V2)
+
+
+def _menu_body() -> str:
+    lines = [
+        MESSAGES["menu_title"],
+        "",
+        escape_md("Comandi disponibili:"),
+        escape_md("• /add — nuovo account"),
+        escape_md("• /list — elenca account"),
+        escape_md("• /get NOME — cerca account"),
+        escape_md("• /copy NOME — copia password"),
+        escape_md("• /list_stale — password vecchie"),
+        escape_md("• /list_reused — password riusate"),
+        escape_md("• /categories — gestisci categorie"),
+        escape_md("• /export — esporta vault"),
+        escape_md("• /import — importa vault"),
+        escape_md("• /settings — impostazioni"),
+        escape_md("• /lock — blocca sessione"),
+        escape_md("• /help — guida completa"),
+    ]
+    return "\n".join(lines)
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:

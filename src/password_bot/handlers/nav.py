@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from telegram import Update
+from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
-from password_bot.handlers.common import MENU_SCREEN
-from password_bot.i18n.it import MESSAGES
+from password_bot.handlers.common import MENU_SCREEN, _menu_body
 from password_bot.state.fsm import FsmContext
 
 
@@ -23,4 +23,4 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await q.edit_message_text("🔙")
     elif action == "menu":
         fsm.reset_to(MENU_SCREEN)
-        await q.edit_message_text(MESSAGES["menu_title"])
+        await q.edit_message_text(_menu_body(), parse_mode=ParseMode.MARKDOWN_V2)
