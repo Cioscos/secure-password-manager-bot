@@ -7,7 +7,7 @@ from password_bot.telegram_utils.keyboards import main_menu_keyboard
 
 def test_main_menu_rows_count():
     kb = main_menu_keyboard()
-    # Two-column layout: 12 actions → 6 rows × 2 buttons.
+    # Two-column layout: 12 actions -> 6 rows x 2 buttons.
     assert len(kb.inline_keyboard) == 6
     assert all(len(row) == 2 for row in kb.inline_keyboard)
 
