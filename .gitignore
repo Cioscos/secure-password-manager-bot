@@ -31,11 +31,23 @@ env/
 
 # Database files
 *.db
+*.db.bak
 *.pkl
+*.pkl.bak
 
 # Keys and credentials
 keys/
 *.dat
+
+# Logs
+password_bot.log
+*.log
+
+# Test caches and coverage
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
 # Temporary output
 repomix-output.md
