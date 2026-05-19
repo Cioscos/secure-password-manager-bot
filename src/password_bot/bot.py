@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 
+import aiosqlite
 from telegram.ext import (
     Application,
     ApplicationBuilder,
@@ -73,18 +75,11 @@ async def _daily_stale_scan(context) -> None:
                 )
 
 
+@asynccontextmanager
 async def _users_iter(container: Container):
-    from contextlib import asynccontextmanager
-
-    @asynccontextmanager
-    async def _ctx():
-        import aiosqlite
-
-        async with aiosqlite.connect(container.config.db_path) as conn:
-            cur = await conn.execute("SELECT chat_id FROM users")
-            yield [r[0] for r in await cur.fetchall()]
-
-    return _ctx()
+    async with aiosqlite.connect(container.config.db_path) as conn:
+        cur = await conn.execute("SELECT chat_id FROM users")
+        yield [r[0] for r in await cur.fetchall()]
 
 
 def build_application(config: AppConfig, *, token: str, dev_chat_id: int | None) -> Application:
