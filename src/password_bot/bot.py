@@ -53,6 +53,7 @@ class _SessionStrippingPersistence(PicklePersistence):
                 ChatDataKey.PENDING_IMPORT_FILE.value,
                 ChatDataKey.PW_GEN_DRAFT.value,
                 ChatDataKey.PW_GEN_RETURN_TO.value,
+                ChatDataKey.FLOW.value,
             }
         }
         await super().update_chat_data(chat_id, clean)
