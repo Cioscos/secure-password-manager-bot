@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from telegram.ext import ContextTypes
-
 from password_bot.config import AppConfig
 from password_bot.crypto.cipher import GcmCipher
 from password_bot.crypto.kdf import Argon2idKdf
@@ -18,10 +16,8 @@ from password_bot.services.alert_service import AlertService
 from password_bot.services.auth_service import AuthService
 from password_bot.services.export_service import ExportService
 from password_bot.services.migration_service import MigrationService
-from password_bot.services.reuse_detector import ReuseDetector
 from password_bot.services.strength_meter import StrengthMeter
 from password_bot.services.vault_service import VaultService
-from password_bot.state.keys import ChatDataKey
 
 
 @dataclass(slots=True)
@@ -90,16 +86,3 @@ class Container:
             alerts=alerts,
             strength=StrengthMeter(),
         )
-
-    def chat_reuse_detector(self, context: ContextTypes.DEFAULT_TYPE) -> ReuseDetector:
-        detector = context.chat_data.get(ChatDataKey.REUSE_DETECTOR.value)
-        if isinstance(detector, ReuseDetector):
-            return detector
-        from password_bot.state.fsm import FsmContext
-
-        session = FsmContext(context.chat_data).get_session()
-        if session is None:
-            raise RuntimeError("Cannot build reuse detector without session")
-        detector = ReuseDetector(session.hmac_key)
-        context.chat_data[ChatDataKey.REUSE_DETECTOR.value] = detector
-        return detector

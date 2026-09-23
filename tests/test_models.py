@@ -61,7 +61,7 @@ def test_user_defaults():
 
 
 def test_category_and_history():
-    c = Category(id="cat1", chat_id=1, name="Work", color=None)
+    c = Category(id="cat1", chat_id=1, name="Work", icon=None)
     h = PasswordHistoryEntry(
         id=1, account_id="abc", password_enc="b64", crypto_version=2, replaced_at=10
     )

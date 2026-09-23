@@ -3,7 +3,7 @@ name = "password-bot"
 version = "0.2.0"
 requires-python = ">=3.13"
 dependencies = [
-    "python-telegram-bot[job-queue,callback-data]",
+    "python-telegram-bot[job-queue,callback-data]>=22.8",
     "cryptography",
     "argon2-cffi",
     "aiosqlite",

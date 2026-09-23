@@ -113,6 +113,27 @@ class VaultService:
         rows = await self._accounts.list_for_chat(chat_id)
         return [self._decrypt_row(r, aes_key) for r in rows]
 
+    async def username_suggestions(
+        self, chat_id: int, *, aes_key: bytes, limit: int = 5
+    ) -> list[str]:
+        """Most used usernames/emails, most frequent first, ties broken by most recent use.
+
+        Emails (values containing '@') are grouped case-insensitively; the most
+        recently used spelling is returned. Only `username_enc` is decrypted.
+        """
+        stats: dict[str, tuple[str, int, int]] = {}  # key -> (display, count, last_used)
+        for row in await self._accounts.list_for_chat(chat_id):
+            value = self._dec(row.username_enc, aes_key)
+            if not value:
+                continue
+            key = value.lower() if "@" in value else value
+            display, count, last = stats.get(key, (value, 0, 0))
+            if row.updated_at >= last:
+                display = value
+            stats[key] = (display, count + 1, max(last, row.updated_at))
+        ranked = sorted(stats.values(), key=lambda s: (-s[1], -s[2]))
+        return [display for display, _, _ in ranked[:limit]]
+
     async def update_fields(
         self, account_id: str, updates: UpdatedFields, *, aes_key: bytes
     ) -> None:
@@ -164,22 +185,6 @@ class VaultService:
             )
             for e in entries
         ]
-
-    async def duplicate(self, account_id: str, *, aes_key: bytes, hmac_key: bytes) -> Account:
-        original = await self._accounts.get(account_id)
-        if original is None:
-            raise ValueError(f"Account {account_id} not found")
-        plain = self._decrypt_row(original, aes_key)
-        new = NewAccount(
-            chat_id=plain.chat_id,
-            name=f"{plain.name} (copia)",
-            username=plain.username,
-            password=plain.password,
-            url=plain.url,
-            note=plain.note,
-            category_id=plain.category_id,
-        )
-        return await self.add(new, aes_key=aes_key, hmac_key=hmac_key)
 
     async def delete(self, account_id: str) -> None:
         await self._accounts.delete(account_id)

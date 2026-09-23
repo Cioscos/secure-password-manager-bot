@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 import secrets
 import time
+import uuid
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -13,6 +15,7 @@ from pydantic import BaseModel, ValidationError
 
 from password_bot.crypto.cipher import GcmCipher
 from password_bot.crypto.kdf import Argon2idKdf
+from password_bot.models.category import Category
 from password_bot.repositories.account_repo import AccountRepo
 from password_bot.repositories.category_repo import CategoryRepo
 from password_bot.services.errors import InvalidExportFileError, InvalidPassphraseError
@@ -128,7 +131,12 @@ class ExportService:
             raise InvalidExportFileError() from e
         if schema.format != EXPORT_FORMAT or schema.version != EXPORT_VERSION:
             raise InvalidExportFileError()
-        salt = base64.b64decode(schema.salt)
+        try:
+            salt = base64.b64decode(schema.salt, validate=True)
+        except (ValueError, binascii.Error) as e:
+            raise InvalidExportFileError() from e
+        if len(salt) != SALT_LEN:
+            raise InvalidExportFileError()
         export_key = self._kdf.derive_key(export_passphrase, salt)
 
         try:
@@ -139,28 +147,53 @@ class ExportService:
         except Exception as e:
             raise InvalidPassphraseError() from e
 
-        added = skipped = overwritten = 0
+        category_names = [*schema.categories, *(i.category for i in schema.items if i.category)]
+        if any(not name.strip() for name in category_names):
+            raise InvalidExportFileError()
+
+        decrypted = []
         for item in schema.items:
             try:
                 password = self._cipher.decrypt(item.password_enc, export_key).decode("utf-8")
+                username = (
+                    self._cipher.decrypt(item.username_enc, export_key).decode("utf-8")
+                    if item.username_enc
+                    else None
+                )
+                url = (
+                    self._cipher.decrypt(item.url_enc, export_key).decode("utf-8")
+                    if item.url_enc
+                    else None
+                )
+                note = (
+                    self._cipher.decrypt(item.note_enc, export_key).decode("utf-8")
+                    if item.note_enc
+                    else None
+                )
             except Exception as e:
                 raise InvalidPassphraseError() from e
-            username = (
-                self._cipher.decrypt(item.username_enc, export_key).decode("utf-8")
-                if item.username_enc
-                else None
-            )
-            url = (
-                self._cipher.decrypt(item.url_enc, export_key).decode("utf-8")
-                if item.url_enc
-                else None
-            )
-            note = (
-                self._cipher.decrypt(item.note_enc, export_key).decode("utf-8")
-                if item.note_enc
-                else None
-            )
+            decrypted.append((item, password, username, url, note))
 
+        category_ids = {
+            c.name.casefold(): c.id for c in await self._categories.list_for_chat(chat_id)
+        }
+
+        async def category_id_for(name: str | None) -> str | None:
+            clean = (name or "").strip()  # preflight rejected blank names; never truncate names
+            if not clean:
+                return None
+            key = clean.casefold()
+            if key not in category_ids:
+                cat = Category(id=str(uuid.uuid4()), chat_id=chat_id, name=clean, icon=None)
+                await self._categories.create(cat)
+                category_ids[key] = cat.id
+            return category_ids[key]
+
+        for cat_name in schema.categories:
+            await category_id_for(cat_name)
+
+        added = skipped = overwritten = 0
+        for item, password, username, url, note in decrypted:
             existing_match = existing.get(item.name.lower())
             if existing_match and strategy == MergeStrategy.SKIP:
                 skipped += 1
@@ -184,7 +217,7 @@ class ExportService:
                     password=password,
                     url=url,
                     note=note,
-                    category_id=None,
+                    category_id=await category_id_for(item.category),
                 ),
                 aes_key=vault_key,
                 hmac_key=hmac_key,

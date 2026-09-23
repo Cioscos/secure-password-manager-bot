@@ -11,10 +11,10 @@ def test_required_keys_exist():
     expected = {
         "SESSION",
         "NAV_STACK",
-        "PENDING_INPUT",
-        "AUTOLOCK_JOB_NAME",
-        "REUSE_DETECTOR",
-        "PENDING_NEW_ACCOUNT",
-        "PENDING_IMPORT_FILE",
+        "LEGACY_SESSION_EXTRAS",
+        "FLOW",
+        "LIVE_MESSAGE_ID",
+        "LIVE_TOKEN",
+        "RESUME",
     }
-    assert expected <= {k.name for k in ChatDataKey}
+    assert expected == {k.name for k in ChatDataKey}

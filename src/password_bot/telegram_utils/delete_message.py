@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from telegram.error import BadRequest
+from telegram.error import TelegramError
 from telegram.ext import Application, ContextTypes
 
 log = logging.getLogger(__name__)
@@ -17,8 +17,8 @@ async def _delete_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id, message_id = job.data  # type: ignore[misc]
     try:
         await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-    except BadRequest as e:
-        log.debug("delete_message failed for %s/%s: %s", chat_id, message_id, e)
+    except TelegramError as e:
+        log.warning("delete_message failed for %s/%s: %s", chat_id, message_id, e)
 
 
 def schedule_delete(

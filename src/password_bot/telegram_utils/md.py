@@ -13,5 +13,6 @@ def escape_md(value: str) -> str:
 
 
 def code_inline(value: str) -> str:
-    inner = value.replace("`", "\\`")
+    # Inside MarkdownV2 code entities only '\' and '`' must be escaped.
+    inner = value.replace("\\", "\\\\").replace("`", "\\`")
     return f"`{inner}`"

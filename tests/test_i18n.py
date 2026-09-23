@@ -36,3 +36,30 @@ def test_messages_are_italian_strings():
     for k, v in MESSAGES.items():
         assert isinstance(v, str)
         assert v.strip(), f"Empty message for {k}"
+
+
+# Generator/category UI strings and the /list header/empty strings now live in their
+# respective ui/screens/*.py modules (generator.py, categories.py, account_list.py) —
+# these MESSAGES keys became dead once the navigator UI replaced the old handlers.
+_PRUNED_LEGACY_KEYS = {
+    "pw_gen_title",
+    "pw_gen_length_prompt",
+    "pw_gen_length_invalid",
+    "pw_gen_no_class_selected",
+    "pw_gen_pool_too_small",
+    "pw_gen_saved_defaults",
+    "pw_gen_reset_done",
+    "pw_gen_generated",
+    "pw_gen_accepted",
+    "cat_new_prompt",
+    "cat_created",
+    "cat_duplicate",
+    "cat_deleted",
+    "cat_empty",
+    "list_title",
+    "list_empty",
+}
+
+
+def test_pruned_legacy_keys_are_gone():
+    assert not (_PRUNED_LEGACY_KEYS & set(MESSAGES.keys()))

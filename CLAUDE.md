@@ -20,7 +20,7 @@ These are loaded once at startup by `password_bot.__main__.main()`. Missing file
 ### Tests / lint
 
 ```bash
-uv run pytest -v                        # full suite (~152 tests)
+uv run pytest -v                        # full suite
 uv run pytest --cov=src/password_bot    # coverage report (gate: 60%)
 uv run ruff check src tests             # lint
 uv run ruff format src tests            # format
@@ -49,7 +49,7 @@ Three on-disk artifacts in the working directory the bot is started from:
   - `accounts(id PK, chat_id FK, name, username_enc, password_enc, url_enc, note_enc, category_id FK, password_hmac, crypto_version, password_changed_at, created_at, updated_at)`. All `_enc` columns hold **base64-encoded AES-256-GCM ciphertext with a 1-byte crypto-version prefix and 12-byte nonce**, never plaintext. `username_enc`, `url_enc`, `note_enc` are NULLABLE (optional fields). `password_hmac` is HMAC-SHA256 hex of the plaintext password keyed by an HKDF-derived subkey — used for reuse detection without exposing plaintext.
   - `categories(id PK, chat_id FK, name, color, UNIQUE(chat_id, name))`.
   - `password_history(id PK AUTOINCREMENT, account_id FK, password_enc, crypto_version, replaced_at)` — retention `HISTORY_MAX=5` (see `config.py`), pruned on every password update.
-- `DB.pkl`     — `PicklePersistence` for python-telegram-bot. Holds `chat_data` minus sensitive runtime keys (`SESSION`, `REUSE_DETECTOR`, `LEGACY_SESSION_EXTRAS`, `PENDING_IMPORT_FILE`, `PW_GEN_DRAFT`, `PW_GEN_RETURN_TO`) stripped by `_SessionStrippingPersistence`.
+- `DB.pkl`     — `PicklePersistence` for python-telegram-bot. Holds `chat_data` (navigation stack, live message id, resume target) and PTB's callback-data cache. `SESSION`, `LEGACY_SESSION_EXTRAS` and `FLOW` (in-progress drafts, may contain secrets) are stripped by `_SessionStrippingPersistence`. Old pickles reference `state.fsm.Screen` and `telegram_utils.callback_data.ListPageData`: both names must stay importable.
 - `keys/`      — secrets loaded at startup, gitignored.
 
 `*.db`, `*.db.bak`, `*.pkl`, `*.pkl.bak`, `password_bot.log` are gitignored. Never commit them.
@@ -71,7 +71,7 @@ All migration scripts are wrapped in `BEGIN;` / `COMMIT;` for atomicity. The ver
 src/password_bot/
 ├── __main__.py                  ← entrypoint: KEYRING=./keys uv run -m password_bot
 ├── config.py                    ← AppConfig (paths, Argon2Params from env)
-├── bot.py                       ← Application builder, ConversationHandler tree, daily scan job
+├── bot.py                       ← Application builder, ConversationHandler tree, daily scan job (skips legacy v1 users; per-user `TelegramError` is logged, never aborts the loop)
 ├── container.py                 ← DI container; Container.build(config) wires every service
 │
 ├── crypto/
@@ -85,7 +85,7 @@ src/password_bot/
 │   ├── migrator.py              ← migrate_to_latest, stepwise v0→v1→v2, legacy detection
 │   ├── migrations/              ← 001_init.sql, 002_legacy_upgrade.sql, 003_user_pw_prefs.sql
 │   ├── user_repo.py             ← UserRepo (get/create/update_passphrase/update_autolock/update_alert_days/get_pw_prefs/set_pw_prefs)
-│   ├── account_repo.py          ← AccountRepo (CRUD + fuzzy search + list_stale)
+│   ├── account_repo.py          ← AccountRepo (CRUD + fuzzy search + list_stale + list_reuse_clusters)
 │   ├── category_repo.py         ← CategoryRepo
 │   └── history_repo.py          ← HistoryRepo (push/list/prune)
 │
@@ -96,46 +96,47 @@ src/password_bot/
 │   ├── errors.py                ← DomainError + subclasses with `user_message` strings
 │   ├── password_generator.py    ← PasswordGenerator + PasswordSpec (flag-based: upper/lower/digits/symbols/exclude_ambiguous/no_duplicates) + legacy PasswordCharset preset + entropy_bits + MIN_LENGTH/MAX_LENGTH
 │   ├── strength_meter.py        ← zxcvbn wrapper; guards empty input
-│   ├── reuse_detector.py        ← compute_password_hmac + in-memory cluster index
+│   ├── reuse_detector.py        ← compute_password_hmac (reuse clusters come from `AccountRepo.list_reuse_clusters`, grouped by `password_hmac` in SQL)
 │   ├── auth_service.py          ← register, unlock, change_passphrase (two-phase: keys returned, persistence deferred), commit_passphrase_change
-│   ├── vault_service.py         ← VaultService (add/get_decrypted/list_decrypted/update_fields/update_password+history/duplicate/delete)
+│   ├── vault_service.py         ← VaultService (add/get_decrypted/list_decrypted/update_fields/update_password+history/delete)
 │   ├── alert_service.py         ← find_stale (user-specific threshold)
 │   ├── migration_service.py     ← unlock_legacy + migrate_user (decrypt CFB → re-encrypt GCM, install Argon2 hash, clear legacy_salt)
 │   └── export_service.py        ← JSON export/import with Argon2-derived export key separate from vault key, MergeStrategy enum
 │
 ├── handlers/
-│   ├── common.py                ← /start, /menu (inline-button main menu), /stop, /lock, /cancel, /help, /back, on_menu_callback (pattern `^menu:`), error_handler
-│   ├── auth.py                  ← handle_passphrase_message (setup / unlock / legacy migration entry)
-│   ├── account_new.py           ← multi-step add flow with /skip for optional fields; the "🎲 Genera" button delegates to password_gen.show_options_from_callback; accept_generated_password resumes the flow
-│   ├── account_view.py          ← per-field display (show/edit/copy buttons, 🔁 duplicate, 🗑 delete-confirm)
-│   ├── account_edit.py          ← handle_pending dispatcher for pending field-edit input
-│   ├── inline_cmd.py            ← /get /add /copy /list (paginated via accounts_page_keyboard) /list_stale /list_reused (terminal replies always carry back_menu_keyboard); on_account_callback (pattern `^acc:`); on_list_callback (typed ListPageData payload)
-│   ├── export.py                ← /export, /import, on_document for uploaded JSON
-│   ├── settings.py              ← /settings (autolock minutes, alert days, password-generator defaults) via inline keyboard, on_callback (pattern `^set:`)
-│   ├── categories.py            ← /categories (inline-button flow: list/select/new/delete-confirm); /cat_add /cat_del still exist as shortcuts; on_callback (pattern `^cat:`); handle_pending_name for `_cat_new_name` text input
-│   ├── password_gen.py          ← interactive password generator (toggle menu, regenerate, accept, save default, reset); show_options_from_callback (entrypoint), on_callback (pattern `^pwgen:`), handle_pending_length for `_pwgen_length` text input
-│   ├── nav.py                   ← nav:back / nav:menu callback handler — re-sends a fresh menu message (does NOT overwrite the originating message with a bare "🔙")
-│   └── dispatcher.py            ← MessageHandler text router; checks PENDING_INPUT (handles `_export_passphrase`, `_import_passphrase`, `_cat_new_name`, `_pwgen_length`, `_search_query`, `_copy_query`, account-edit) → session → new-account flow
+│   └── common.py                ← error_handler only (DMs the developer, turns the live message into "⚠️ Errore interno")
+│
+├── ui/                          ← single-live-message UI (see "UI: Navigator + Screens")
+│   ├── navigator.py             ← Navigator: stack, live message edit/send, routing, lock, auto-close, reveal
+│   ├── screen.py                ← View, Ctx, results (Go/Reveal/Lock) + helpers, Screen base class
+│   ├── callbacks.py             ← Act(screen, action, arg, token) payload + NAV pseudo-screen
+│   ├── views.py                 ← btn/nav_btn/copy_btn/url_btn/footer/keyboard, styles, normalize_url, md_date
+│   ├── jobs.py                  ← schedule_autolock / autolock_job
+│   ├── commands.py              ← PTB handler functions (slash commands, callbacks, text, documents)
+│   ├── registry.py              ← build_screens(): every screen by name
+│   ├── legacy.py                ← post_init cleanup of old-UI chat_data
+│   └── screens/                 ← one module per screen group (home, unlock, help, account_*, search, history,
+│                                   generator, password_change, categories, health, settings, transfer, _shared)
 │
 ├── state/
-│   ├── keys.py                  ← ChatDataKey StrEnum (SESSION, NAV_STACK, PENDING_INPUT, REUSE_DETECTOR, PENDING_NEW_ACCOUNT, PENDING_IMPORT_FILE, LEGACY_SESSION_EXTRAS, AUTOLOCK_JOB_NAME, PW_GEN_DRAFT, PW_GEN_RETURN_TO) — never use raw strings
-│   └── fsm.py                   ← FsmContext + Screen dataclass (push/pop/top/depth/pop_to/reset_to/pending_input/session ops)
+│   ├── keys.py                  ← ChatDataKey (SESSION, NAV_STACK, LEGACY_SESSION_EXTRAS, FLOW, LIVE_MESSAGE_ID, LIVE_TOKEN, RESUME)
+│   └── fsm.py                   ← FsmContext + Frame (alias Screen for old pickles): stack, resume, session, lock()
 │
 ├── i18n/
-│   └── it.py                    ← MESSAGES dict, all Italian strings centralized (menu/pw_gen_*/cat_* keys included)
+│   └── it.py                    ← MESSAGES dict: Italian strings shared across services/handlers (error_internal, account_*, passphrase/session prompts, export/import, stale-alert). Screen-specific copy lives inline in `ui/screens/*.py`, not here.
 │
 └── telegram_utils/
-    ├── md.py                    ← escape_md, code_inline (MarkdownV2 helpers)
-    ├── keyboards.py             ← single_column, back_menu_keyboard, confirm_cancel_keyboard, main_menu_keyboard (2-column × 6 rows, label-only, driven by MAIN_MENU_ITEMS), accounts_page_keyboard (paginated /list, ACCOUNTS_PAGE_SIZE=8)
-    ├── callback_data.py         ← typed payloads for arbitrary_callback_data: ListPageData(page: int) used by /list pagination
-    └── delete_message.py        ← schedule_delete via job_queue.run_once for auto-deleting sensitive messages
+    ├── md.py                    ← escape_md, code_inline (MarkdownV2)
+    ├── callback_data.py         ← legacy ListPageData, kept only for unpickling old DB.pkl
+    └── delete_message.py        ← schedule_delete for self-destructing secret messages
 
 tests/
 ├── conftest.py                  ← fast_argon2 (autouse, sets PB_ARGON2_* low), aes_key, tmp_db_path
 ├── crypto/                      ← test_kdf, test_cipher (incl. hypothesis property), test_legacy_migration, test_hkdf
 ├── repositories/                ← test_db_migrator (v0→v1, v1→v2, pw_prefs column), test_user_repo (incl. pw_prefs round-trip), test_account_repo, test_category_repo, test_history_repo
 ├── services/                    ← test_result, test_password_generator (flags, ambiguous exclusion, no-duplicates, entropy), test_strength_meter, test_reuse_detector, test_auth_service, test_vault_service, test_alert_service, test_migration_service, test_export_service
-└── handlers/                    ← test_smoke (Application builds with root conversation), test_markdown_escape (regression on `-`/`(`/`)`), test_password_gen_integration, test_categories_integration, test_list_pagination (paginated /list keyboard + on_list_callback)
+├── ui/                          ← screen tests (env fixture in conftest.py, fakes in _helpers.py), test_navigator, test_wiring
+└── handlers/                    ← test_smoke (Application builds with root conversation), test_markdown_escape (regression on `-`/`(`/`)`), test_daily_scan
 ```
 
 ### Result type quirk
@@ -188,52 +189,11 @@ Legacy `PasswordCharset` (DIGITS / ALPHANUM / ALPHANUM_SYMBOLS) is retained only
 
 `models.pw_prefs.PwPrefs` mirrors the configurable fields above and is JSON-serialized into `users.pw_prefs` via `UserRepo.get_pw_prefs(chat_id)` / `set_pw_prefs(chat_id, prefs)`. `PwPrefs.from_json` is tolerant: returns built-in defaults on `None`/empty/invalid JSON.
 
-The interactive generator UI lives in `handlers.password_gen`:
-- `show_options_from_callback(update, context, *, return_to)` loads `PwPrefs` from DB, stores a copy in `chat_data[PW_GEN_DRAFT]` and the caller hint in `chat_data[PW_GEN_RETURN_TO]`, then renders the toggle keyboard via `edit_message_text` (falling back to `send_message`).
-- `on_callback` (pattern `^pwgen:`) handles `toggle:<flag>`, `len`, `run`, `accept`, `save`, `reset`, `back`, `cancel`.
-- `handle_pending_length` is called by the dispatcher when `pending["field"] == "_pwgen_length"` and validates `MIN_LENGTH ≤ n ≤ MAX_LENGTH`.
-- `pwgen:accept` reads `PW_GEN_RETURN_TO`:
-  - `"account_new"` → calls `handlers.account_new.accept_generated_password(...)` which writes the password into the in-flight draft and advances to the URL step;
-  - anything else → simply confirms.
-- `PW_GEN_DRAFT` and `PW_GEN_RETURN_TO` are runtime-only and stripped by `_SessionStrippingPersistence` (do NOT survive a restart).
-
-### Inline-button UX
-
-The bot is button-first; slash commands are kept as shortcuts. Key conventions:
-
-- `cmd_start` ends with `await _send_menu(update.effective_chat)` which sends `_menu_body()` plus `main_menu_keyboard()`. The keyboard is a **2-column grid** of 12 buttons (6 rows × 2); each label is the bare `"<emoji+nome>"` (no inline description — the descriptions live only in the text body above the keyboard). The button list is driven by `MAIN_MENU_ITEMS` in `telegram_utils/keyboards.py`. The text body lists the same 12 slash-command shortcuts one per line with a short description (driven by `_QUICK_COMMANDS` in `handlers/common.py`). The same helper is reused by `/menu`, `/back`, and `nav:menu`.
-- All callback patterns:
-  - `^menu:` → `common.on_menu_callback` (dispatches add/list/search/copy/stale/reused/categories/settings/export/import/lock/help)
-  - `^nav:` → `nav.on_callback` (back/menu — always sends a fresh menu message, never overwrites the originating message with a `"🔙"` placeholder)
-  - `^view:` → `account_view.on_callback`
-  - `^set:` → `settings.on_callback`
-  - `^cat:` → `categories.on_callback`
-  - `^pwgen:` → `password_gen.on_callback`
-  - `^acc:` → `inline_cmd.on_account_callback` (opens an account from a multi-result `/get` and from the paginated `/list`)
-  - `^newpw:` → `account_new.callback_generate_password` / `callback_manual_password`
-  - typed `ListPageData` payload → `inline_cmd.on_list_callback` (page navigation for `/list`). The handler is registered with a callable `pattern=lambda d: isinstance(d, ListPageData)`, not a regex — PTB accepts callables when `arbitrary_callback_data=True` is enabled on `ApplicationBuilder`.
-- Search/copy from the menu work via a one-shot pending input: the callback sets `pending = {"field": "_search_query" | "_copy_query"}` and the dispatcher forwards the next text message back into `cmd_get` / `cmd_copy` by filling `context.args`.
-- Handlers reachable from BOTH commands and callbacks (e.g. `settings.cmd_settings`, `inline_cmd.cmd_list`, `categories.cmd_categories`, `export.cmd_export/cmd_import`) MUST use `update.effective_chat.send_message(...)` — `update.message.reply_text` raises on a `CallbackQuery` update.
-- Terminal replies (`/list`, `/list_stale`, `/list_reused`, account_saved, etc.) attach `back_menu_keyboard(show_menu=True)` so the user always has a way back to the menu.
-
-### Paginated `/list` + arbitrary callback_data
-
-PTB is installed with the `[callback-data]` extra (`pyproject.toml` → `python-telegram-bot[job-queue,callback-data]`). `ApplicationBuilder().arbitrary_callback_data(True)` is enabled in `bot.build_application`, so handlers can attach Python objects to `InlineKeyboardButton.callback_data` and receive them back unchanged on the next update — bypassing Telegram's 64-byte wire limit. PTB stores the original payload in a per-Bot LRU cache (default 1024 entries) and ships a UUID stand-in on the wire.
-
-`/list` (and the `menu:list` button) renders an interactive paginated keyboard via `telegram_utils.keyboards.accounts_page_keyboard(rows, *, page, page_size=ACCOUNTS_PAGE_SIZE)`:
-
-- One row per account on the current page; each account button uses **string** callback_data `"acc:open:{id}"`, so it flows into the existing `^acc:` regex handler shared with `cmd_get`.
-- Nav row `[◀] [N/M] [▶]` uses **typed** `ListPageData(page=...)` callback_data (`telegram_utils/callback_data.py`). Boundary arrows are omitted on first/last page. The middle badge is a no-op (re-renders the same page; `on_list_callback` swallows `BadRequest "message is not modified"`).
-- Footer row `[🔙 Indietro] [🏠 Menu]` reuses the standard `nav:back` / `nav:menu` string callbacks.
-
-`handlers.inline_cmd.on_list_callback` re-fetches accounts on every page nav (avoids stale data after an add/edit) and uses `q.edit_message_text(...)` to mutate the existing message rather than spam new ones. Pagination state lives **entirely in `callback_data`** — no new `ChatDataKey`, no chat_data writes, so back/forward survives autolock without leaking.
-
-i18n keys: `list_title` (`📚 *Account* — pagina {cur}/{tot}`) and `list_empty` (`Vault vuoto.`). The page indicator inside the button itself is rendered directly from `page+1` and `total_pages` in the keyboard helper.
-
-When adding more typed callback payloads:
-1. Add a `@dataclass(frozen=True, slots=True)` to `telegram_utils/callback_data.py`.
-2. Register a `CallbackQueryHandler(handler, pattern=lambda d: isinstance(d, MyPayload))` in `bot.build_application`.
-3. In the handler, `q.data` is the restored dataclass instance — `isinstance` check it, then read fields. No `split(":")` parsing.
+The interactive generator UI lives in `ui/screens/generator.py` (`GeneratorScreen`, name `generator`):
+- `on_enter` loads `PwPrefs` from DB into the screen's own `FLOW` draft (`ctx.flow("generator")`).
+- `on_action` handles `toggle` (arg = flag), `len` (next text is the length, validated `MIN_LENGTH ≤ n ≤ MAX_LENGTH`), `run`, `use`, `save`, `reset`.
+- `use` hands the password to the calling flow: it writes `flow[args["flow"]]["password"]` and `["step"] = args["next_step"]`, then goes back.
+- The draft lives in `FLOW`, is stripped by `_SessionStrippingPersistence` and cleared on lock (does NOT survive a restart).
 
 ### MarkdownV2 escaping
 
@@ -251,25 +211,13 @@ The previous bot used PBKDF2-HMAC-SHA256 (100k iter) + AES-CFB. Two quirks repro
 
 `LegacyCfbDecryptor.decrypt(ciphertext_b64, key) → str` decodes IV from first 16 bytes, rest is CFB ciphertext, returns utf-8 str.
 
-### Conversation state machine
-
-Single `ConversationHandler` (`name="root"`, persistent, per_chat). Entry point: `/start` returning state `0`. All in-state handlers are registered in `states[0]`. Fallback: `/stop` returns `ConversationHandler.END`.
-
-PTB state stays in `0` forever. Real "navigation state" lives in `chat_data` via the FSM screen stack (see `state.fsm.FsmContext`). Each handler reads/writes via typed `ChatDataKey` enum members — never raw strings.
-
-Critical invariants:
-- `cmd_start` MUST `return 0` (entry point returning None ends the conversation).
-- `chat_data[ChatDataKey.SESSION.value]` is the live `Session` dataclass (`aes_key`, `hmac_key`, `expires_at`, optional `_legacy_key`/`_new_passphrase_hash` for in-flight migration). NEVER persisted to disk (filtered by `_SessionStrippingPersistence`).
-- `chat_data[ChatDataKey.PENDING_INPUT.value]` is `{field, id}` for any in-flight one-shot prompt. `cmd_cancel` clears it.
-- `_schedule_autolock` schedules a `run_once` job that calls `_autolock_callback` to wipe session via `FsmContext.clear_session`.
-
 ### Passphrase lifecycle (security-critical)
 
 - The passphrase is **never** persisted to disk in any form.
-- When the user sends it, `handlers.auth.handle_passphrase_message` (a) deletes the inbound message immediately, (b) routes to `register` (no user), `unlock_legacy` + `migrate_user` (user.crypto_version=1), or `unlock` (user.crypto_version=2).
+- When the user sends it, the Navigator deletes the inbound message immediately and `UnlockScreen.on_text` (`ui/screens/unlock.py`) routes to `register` (no user), `unlock_legacy` + `migrate_user` (user.crypto_version=1), or `unlock` (user.crypto_version=2).
 - `AuthService.unlock` derives the AES key from `passphrase + salt-extracted-from-encoded-Argon2-hash` and returns a `Session`. The `Session.hmac_key` is `HKDF(aes_key, info=b"reuse-detection")`.
-- Session lifetime: `autolock_minutes * 60` if >0, else 15 minutes default. `_schedule_autolock` job clears the session and notifies the user.
-- `Session` is stored in `chat_data[ChatDataKey.SESSION]`. The custom `_SessionStrippingPersistence.update_chat_data` filters this key (and `REUSE_DETECTOR`, `LEGACY_SESSION_EXTRAS`, `PENDING_IMPORT_FILE`, `PW_GEN_DRAFT`, `PW_GEN_RETURN_TO`) before writing `DB.pkl`.
+- Session lifetime: `autolock_minutes * 60` if >0, else 15 minutes default. `ui.jobs.schedule_autolock` schedules the job that locks the chat (`Navigator.lock`).
+- `Session` is stored in `chat_data[ChatDataKey.SESSION]`. The custom `_SessionStrippingPersistence.update_chat_data` filters this key (and `LEGACY_SESSION_EXTRAS`, `FLOW`) before writing `DB.pkl`.
 
 ### Passphrase change (two-phase commit)
 
@@ -282,28 +230,35 @@ If you reverse the order (persist first, then re-encrypt), a crash mid-rotation 
 
 ### Legacy migration on first unlock
 
-When `user.crypto_version == 1`, `handlers.auth.handle_passphrase_message` calls `MigrationService.unlock_legacy` then `migrate_user`:
+When `user.crypto_version == 1`, `UnlockScreen` (`ui/screens/unlock.py`) calls `MigrationService.unlock_legacy` then `migrate_user`:
 - `unlock_legacy` verifies the legacy PBKDF2 hash, derives the legacy CFB key, computes a fresh Argon2 hash + GCM key, returns a `Session` carrying both `_legacy_key` and `_new_passphrase_hash` as additional fields (regular dataclass attributes, NOT `__dict__` injection — slots dataclass blocks that).
 - `migrate_user` walks every account row of that user: legacy-decrypt → GCM-encrypt with the new key → update row, then installs the new Argon2 hash and clears `legacy_salt` via `users.update_passphrase`.
 
 ### Repository conventions
 
-- All user-facing strings are **Italian** and centralized in `password_bot/i18n/it.py` `MESSAGES` dict. Keep tone informal ("tu", short imperative). Never inline Italian text in handlers — import from `MESSAGES`.
+- All user-facing strings are **Italian**, informal tone ("tu", short imperative). UI copy lives in the owning screen module under `ui/screens/*.py` (each screen defines its own text inline); `password_bot/i18n/it.py` `MESSAGES` holds only strings shared across services/handlers/screens (e.g. `error_internal`, passphrase/session prompts, export/import outcomes, the stale-password alert). Add a new shared string to `MESSAGES`; add a new screen-only string directly in that screen's module.
 - All `chat_data` keys are members of `state.keys.ChatDataKey` enum — never raw strings.
 - Repos return `*Row` dataclasses (raw, with `_enc` strings) from queries. Services decrypt `*Row` into domain objects (`Account`, etc.).
 - Each repo call opens/closes its own `aiosqlite.connect` via `db.connect()` async context manager. No long-lived connection.
 - Fuzzy account search uses `thefuzz.fuzz.partial_ratio` in `AccountRepo.search`; default threshold 60.
 - Errors funnel through `handlers.common.error_handler` which DMs the dev (`container.dev_chat_id`) with a redacted traceback. Domain-expected failures use `Result[T]`; unexpected failures propagate.
 - Lint config in `pyproject.toml` `[tool.ruff]`: line-length 100, target py313, select `E F I B UP SIM RUF`. Run `uv run ruff check src tests` before commit. Pre-commit format with `uv run ruff format src tests`.
-- Test coverage gate: 60% (CI); aspirational 75%. Handler modules ship with smoke tests plus a few targeted lightweight integration tests (`tests/handlers/test_password_gen_integration.py`, `test_categories_integration.py`, `test_markdown_escape.py`); deeper handler coverage is the next bump target.
+- Test coverage gate: 60% (CI); aspirational 75%. UI screens are tested in `tests/ui/` (one module per screen group, plus `test_navigator.py` and `test_wiring.py` for the handler tree and legacy cleanup).
 
-### Adding a new handler
+### UI: Navigator + Screens
 
-1. Create `src/password_bot/handlers/foo.py`. Use `from password_bot.container import Container` and `container = context.application.bot_data["container"]` at the start of each handler.
-2. Use `update.effective_chat.send_message(...)` so the handler works whether called from a `CommandHandler` (`update.message`) or a `CallbackQueryHandler` (`update.callback_query.message`). `update.message` is `None` on a callback update.
-3. Wrap user-supplied strings in `escape_md(...)` from `telegram_utils.md` before sending with `parse_mode=MARKDOWN_V2`. Bullets at the start of lines use `•`, not `-`.
-4. End each terminal action with `back_menu_keyboard(show_menu=True)` (or another keyboard) so the user is never stranded without a way back.
-5. Register the handler in `bot.build_application` inside the `states[0]` list.
-6. If callbacks are involved, pick a unique callback_data prefix (e.g. `foo:`) and add a `CallbackQueryHandler(foo.on_callback, pattern=r"^foo:")` next to the existing ones.
-7. If your callback needs free-text input, set `FsmContext(...).set_pending_input({"field": "_foo_xxx"})`, prompt the user, then add a branch in `dispatcher.on_text` matching that field — never re-implement text routing locally.
-8. Store any transient draft under a typed `ChatDataKey`. If it must NOT survive a restart, add its `.value` to the strip-list in `_SessionStrippingPersistence.update_chat_data` (`bot.py`).
+- **One live message.** The bot keeps a single message with buttons (`LIVE_MESSAGE_ID`) and edits it for every screen. Slash commands delete it and send a fresh one at the bottom. User text/documents are deleted after being read. Revealed secrets are separate messages deleted after 30 s.
+- **Screens** (`ui/screens/*`) subclass `Screen`: `render(ctx) -> View`, `on_action(ctx, act)`, optional `on_text` / `on_document` / `on_enter` / `render_expired`. Navigation returns `Go` (stack moves + notice/toast), `Reveal` or `Lock`. The export screen is an explicit exception: it sends the encrypted document through `ctx.bot`; live-message edits still belong to Navigator. Helpers: `open_screen`, `replace`, `back`, `refresh`, `home`, `pop_to`, `finish`.
+- **Stack** frames are `Frame(name, data)`; `data` holds only ids/pages/flags/search queries. `🔙` pops (label = title of the screen below), `🏠` resets to `home`. Flows end with `finish(...)`/`pop_to(...)` so back never re-enters them.
+- **Callbacks** are `Act(screen, action, arg, token)` via `arbitrary_callback_data`. Navigator stamps `token` for each render; only the current message and generation may act. Pickled payloads contain ids, indices, names and render tokens, never usernames/passwords/URLs/notes. Values picked from lists live in `FLOW` and are referenced by index. Invalid payloads/non-live messages go to Home; outdated generations only refresh the current screen, preserving a closed detail.
+- **Flows** keep drafts in `ctx.flow(key)` (`ChatDataKey.FLOW`), never persisted, cleared by `FsmContext.lock()`. The generator returns a password by writing `flow[args["flow"]]["password"]` and `["step"] = args["next_step"]`.
+- **Locking.** Missing or expired sessions go to `unlock`; `RESUME` stores a restartable target, never a pending action. Dependent flows return to their creation root or account detail. Autolock and updates share a per-chat runtime lock; obsolete timer deadlines cannot lock a newer session. Runtime `bot_data` is not persisted.
+- **Auto-close.** A `View(expire_after=60)` (account detail) schedules `expire:<chat_id>`; if the live message still shows that render (`LIVE_TOKEN`), it becomes `render_expired()` (copy buttons disappear).
+- **Styles.** `views.PRIMARY` main action, `SUCCESS` confirmations, `DANGER` destructive.
+
+### Adding a new screen
+
+1. Create `ui/screens/<name>.py` with a `Screen` subclass (`name`, `title`, `render`, `on_action`…).
+2. Add it to the list in `ui/registry.py::build_screens`.
+3. Open it from another screen with `open_screen("<name>", ...)` or from a slash command with `commands.open_command("<name>")` in `bot.py`.
+4. Test it with the `env` fixture from `tests/ui/conftest.py` (real services on a temp DB) and helpers from `tests/ui/_helpers.py`.

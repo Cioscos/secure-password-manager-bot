@@ -8,4 +8,4 @@ class Category:
     id: str
     chat_id: int
     name: str
-    color: str | None
+    icon: str | None  # stored in the legacy `categories.color` column
