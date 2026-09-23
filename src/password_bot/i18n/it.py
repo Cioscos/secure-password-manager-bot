@@ -20,8 +20,6 @@ MESSAGES: dict[str, str] = {
     "account_saved": "✅ Account salvato.",
     "account_deleted": "🗑 Account eliminato.",
     "account_not_found": "Account non trovato.",
-    "list_title": "📚 *Account* — pagina {cur}/{tot}",
-    "list_empty": "Vault vuoto.",
     "field_updated": "✅ Campo aggiornato.",
     "delete_confirm_prompt": (
         "Per confermare l'eliminazione scrivi esattamente `ELIMINA`.\nQualsiasi altra cosa annulla."
@@ -37,18 +35,4 @@ MESSAGES: dict[str, str] = {
     "back": "🔙 Indietro",
     "menu": "🏠 Menu",
     "error_internal": "Errore interno. Lo sviluppatore è stato avvisato. /menu per ricominciare.",
-    "pw_gen_title": "🎲 *Generatore password*",
-    "pw_gen_length_prompt": "Inserisci la nuova lunghezza (4-128).",
-    "pw_gen_length_invalid": "Lunghezza non valida. Usa un numero tra 4 e 128.",
-    "pw_gen_no_class_selected": "⚠️ Seleziona almeno una classe di caratteri.",
-    "pw_gen_pool_too_small": "⚠️ Pool troppo piccolo per la lunghezza con no-duplicati.",
-    "pw_gen_saved_defaults": "💾 Preferenze salvate.",
-    "pw_gen_reset_done": "🔄 Reset ai valori predefiniti.",
-    "pw_gen_generated": "🔑 Password generata ({length} car, entropia ≈ {entropy} bit).",
-    "pw_gen_accepted": "✅ Password accettata.",
-    "cat_new_prompt": "Nome della nuova categoria? /cancel per annullare.",
-    "cat_created": "✅ Categoria '{name}' creata.",
-    "cat_duplicate": "Categoria già esistente.",
-    "cat_deleted": "🗑 Categoria eliminata.",
-    "cat_empty": "Nessuna categoria ancora creata.",
 }

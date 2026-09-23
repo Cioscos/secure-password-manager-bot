@@ -20,7 +20,7 @@ These are loaded once at startup by `password_bot.__main__.main()`. Missing file
 ### Tests / lint
 
 ```bash
-uv run pytest -v                        # full suite (~152 tests)
+uv run pytest -v                        # full suite
 uv run pytest --cov=src/password_bot    # coverage report (gate: 60%)
 uv run ruff check src tests             # lint
 uv run ruff format src tests            # format
@@ -123,7 +123,7 @@ src/password_bot/
 │   └── fsm.py                   ← FsmContext + Frame (alias Screen for old pickles): stack, resume, session, lock()
 │
 ├── i18n/
-│   └── it.py                    ← MESSAGES dict, all Italian strings centralized (menu/pw_gen_*/cat_* keys included)
+│   └── it.py                    ← MESSAGES dict: Italian strings shared across services/handlers (error_internal, account_*, passphrase/session prompts, export/import, stale-alert). Screen-specific copy lives inline in `ui/screens/*.py`, not here.
 │
 └── telegram_utils/
     ├── md.py                    ← escape_md, code_inline (MarkdownV2)
@@ -236,7 +236,7 @@ When `user.crypto_version == 1`, `UnlockScreen` (`ui/screens/unlock.py`) calls `
 
 ### Repository conventions
 
-- All user-facing strings are **Italian** and centralized in `password_bot/i18n/it.py` `MESSAGES` dict. Keep tone informal ("tu", short imperative). Never inline Italian text in handlers — import from `MESSAGES`.
+- All user-facing strings are **Italian**, informal tone ("tu", short imperative). UI copy lives in the owning screen module under `ui/screens/*.py` (each screen defines its own text inline); `password_bot/i18n/it.py` `MESSAGES` holds only strings shared across services/handlers/screens (e.g. `error_internal`, passphrase/session prompts, export/import outcomes, the stale-password alert). Add a new shared string to `MESSAGES`; add a new screen-only string directly in that screen's module.
 - All `chat_data` keys are members of `state.keys.ChatDataKey` enum — never raw strings.
 - Repos return `*Row` dataclasses (raw, with `_enc` strings) from queries. Services decrypt `*Row` into domain objects (`Account`, etc.).
 - Each repo call opens/closes its own `aiosqlite.connect` via `db.connect()` async context manager. No long-lived connection.
