@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from password_bot.ui.screen import Screen
+from password_bot.ui.screens.account_list import AccountListScreen
 from password_bot.ui.screens.help import HelpScreen
 from password_bot.ui.screens.home import HomeScreen
+from password_bot.ui.screens.search import SearchScreen
 from password_bot.ui.screens.unlock import UnlockScreen
 
 
@@ -13,5 +15,7 @@ def build_screens() -> dict[str, Screen]:
         HomeScreen(),
         UnlockScreen(),
         HelpScreen(),
+        AccountListScreen(),
+        SearchScreen(),
     ]
     return {s.name: s for s in screens}
