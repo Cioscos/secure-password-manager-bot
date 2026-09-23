@@ -8,6 +8,13 @@ from password_bot.ui.screens.account_detail import AccountDetailScreen
 from password_bot.ui.screens.account_edit import AccountEditScreen, FieldEditScreen
 from password_bot.ui.screens.account_list import AccountListScreen
 from password_bot.ui.screens.account_new import AccountNewScreen
+from password_bot.ui.screens.categories import (
+    CategoriesScreen,
+    CategoryDeleteScreen,
+    CategoryFormScreen,
+    CategoryIconScreen,
+    CategoryPickScreen,
+)
 from password_bot.ui.screens.generator import GeneratorScreen
 from password_bot.ui.screens.help import HelpScreen
 from password_bot.ui.screens.history import HistoryScreen
@@ -32,5 +39,10 @@ def build_screens() -> dict[str, Screen]:
         AccountDeleteScreen(),
         GeneratorScreen(),
         PasswordChangeScreen(),
+        CategoriesScreen(),
+        CategoryPickScreen(),
+        CategoryFormScreen(),
+        CategoryIconScreen(),
+        CategoryDeleteScreen(),
     ]
     return {s.name: s for s in screens}
