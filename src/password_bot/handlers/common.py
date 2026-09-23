@@ -39,6 +39,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         )
         return 0
     if fsm.get_session() is None:
+        # Re-entry after an autolock: make sure the passphrase can't land in a stale flow.
+        fsm.lock()
         fsm.reset_to(UNLOCK_SCREEN)
         await update.message.reply_text(
             escape_md(MESSAGES["ask_passphrase"]),
@@ -60,7 +62,7 @@ async def cmd_stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def cmd_lock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    _fsm(context).clear_session()
+    _fsm(context).lock()
     await update.effective_chat.send_message(
         escape_md(MESSAGES["session_locked"]),
         parse_mode=ParseMode.MARKDOWN_V2,

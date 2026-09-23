@@ -68,5 +68,17 @@ class FsmContext:
 
     def clear_session(self) -> None:
         self._chat_data.pop(ChatDataKey.SESSION.value, None)
-        self._chat_data.pop(ChatDataKey.REUSE_DETECTOR.value, None)
         self._chat_data.pop(ChatDataKey.LEGACY_SESSION_EXTRAS.value, None)
+
+    def lock(self) -> None:
+        """Drop the session and every in-progress flow, so the next text is a passphrase."""
+        self.clear_session()
+        for key in (
+            ChatDataKey.PENDING_INPUT,
+            ChatDataKey.PENDING_NEW_ACCOUNT,
+            ChatDataKey.PENDING_IMPORT_FILE,
+            ChatDataKey.PW_GEN_DRAFT,
+            ChatDataKey.PW_GEN_RETURN_TO,
+        ):
+            self._chat_data.pop(key.value, None)
+        self._chat_data[ChatDataKey.NAV_STACK.value] = []

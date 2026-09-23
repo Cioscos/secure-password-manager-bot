@@ -13,7 +13,6 @@ def test_required_keys_exist():
         "NAV_STACK",
         "PENDING_INPUT",
         "AUTOLOCK_JOB_NAME",
-        "REUSE_DETECTOR",
         "PENDING_NEW_ACCOUNT",
         "PENDING_IMPORT_FILE",
     }

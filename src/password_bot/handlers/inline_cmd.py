@@ -181,13 +181,11 @@ async def cmd_list_stale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def cmd_list_reused(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    session = _require_session(context)
-    if session is None:
+    if _require_session(context) is None:
         await update.effective_chat.send_message(MESSAGES["session_locked"])
         return
     container: Container = context.application.bot_data["container"]
-    detector = container.chat_reuse_detector(context)
-    clusters = detector.all_clusters(min_size=2)
+    clusters = await container.accounts.list_reuse_clusters(update.effective_chat.id)
     if not clusters:
         await update.effective_chat.send_message(
             "Nessuna password riusata. 🎉", reply_markup=back_menu_keyboard(show_menu=True)
@@ -195,7 +193,7 @@ async def cmd_list_reused(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     lines = ["⚠️ *Password riusate*"]
     for cluster in clusters:
-        names = ", ".join(escape_md(name) for _, name in cluster)
+        names = ", ".join(escape_md(row.name) for row in cluster)
         lines.append(f"• {names}")
     await update.effective_chat.send_message(
         "\n".join(lines),

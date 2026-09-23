@@ -49,7 +49,7 @@ Three on-disk artifacts in the working directory the bot is started from:
   - `accounts(id PK, chat_id FK, name, username_enc, password_enc, url_enc, note_enc, category_id FK, password_hmac, crypto_version, password_changed_at, created_at, updated_at)`. All `_enc` columns hold **base64-encoded AES-256-GCM ciphertext with a 1-byte crypto-version prefix and 12-byte nonce**, never plaintext. `username_enc`, `url_enc`, `note_enc` are NULLABLE (optional fields). `password_hmac` is HMAC-SHA256 hex of the plaintext password keyed by an HKDF-derived subkey — used for reuse detection without exposing plaintext.
   - `categories(id PK, chat_id FK, name, color, UNIQUE(chat_id, name))`.
   - `password_history(id PK AUTOINCREMENT, account_id FK, password_enc, crypto_version, replaced_at)` — retention `HISTORY_MAX=5` (see `config.py`), pruned on every password update.
-- `DB.pkl`     — `PicklePersistence` for python-telegram-bot. Holds `chat_data` minus sensitive runtime keys (`SESSION`, `REUSE_DETECTOR`, `LEGACY_SESSION_EXTRAS`, `PENDING_IMPORT_FILE`, `PW_GEN_DRAFT`, `PW_GEN_RETURN_TO`) stripped by `_SessionStrippingPersistence`.
+- `DB.pkl`     — `PicklePersistence` for python-telegram-bot. Holds `chat_data` minus sensitive runtime keys (`SESSION`, `LEGACY_SESSION_EXTRAS`, `PENDING_IMPORT_FILE`, `PW_GEN_DRAFT`, `PW_GEN_RETURN_TO`) stripped by `_SessionStrippingPersistence`.
 - `keys/`      — secrets loaded at startup, gitignored.
 
 `*.db`, `*.db.bak`, `*.pkl`, `*.pkl.bak`, `password_bot.log` are gitignored. Never commit them.
@@ -71,7 +71,7 @@ All migration scripts are wrapped in `BEGIN;` / `COMMIT;` for atomicity. The ver
 src/password_bot/
 ├── __main__.py                  ← entrypoint: KEYRING=./keys uv run -m password_bot
 ├── config.py                    ← AppConfig (paths, Argon2Params from env)
-├── bot.py                       ← Application builder, ConversationHandler tree, daily scan job
+├── bot.py                       ← Application builder, ConversationHandler tree, daily scan job (skips legacy v1 users; per-user `TelegramError` is logged, never aborts the loop)
 ├── container.py                 ← DI container; Container.build(config) wires every service
 │
 ├── crypto/
@@ -85,7 +85,7 @@ src/password_bot/
 │   ├── migrator.py              ← migrate_to_latest, stepwise v0→v1→v2, legacy detection
 │   ├── migrations/              ← 001_init.sql, 002_legacy_upgrade.sql, 003_user_pw_prefs.sql
 │   ├── user_repo.py             ← UserRepo (get/create/update_passphrase/update_autolock/update_alert_days/get_pw_prefs/set_pw_prefs)
-│   ├── account_repo.py          ← AccountRepo (CRUD + fuzzy search + list_stale)
+│   ├── account_repo.py          ← AccountRepo (CRUD + fuzzy search + list_stale + list_reuse_clusters)
 │   ├── category_repo.py         ← CategoryRepo
 │   └── history_repo.py          ← HistoryRepo (push/list/prune)
 │
@@ -96,7 +96,7 @@ src/password_bot/
 │   ├── errors.py                ← DomainError + subclasses with `user_message` strings
 │   ├── password_generator.py    ← PasswordGenerator + PasswordSpec (flag-based: upper/lower/digits/symbols/exclude_ambiguous/no_duplicates) + legacy PasswordCharset preset + entropy_bits + MIN_LENGTH/MAX_LENGTH
 │   ├── strength_meter.py        ← zxcvbn wrapper; guards empty input
-│   ├── reuse_detector.py        ← compute_password_hmac + in-memory cluster index
+│   ├── reuse_detector.py        ← compute_password_hmac (reuse clusters come from `AccountRepo.list_reuse_clusters`, grouped by `password_hmac` in SQL)
 │   ├── auth_service.py          ← register, unlock, change_passphrase (two-phase: keys returned, persistence deferred), commit_passphrase_change
 │   ├── vault_service.py         ← VaultService (add/get_decrypted/list_decrypted/update_fields/update_password+history/duplicate/delete)
 │   ├── alert_service.py         ← find_stale (user-specific threshold)
@@ -118,7 +118,7 @@ src/password_bot/
 │   └── dispatcher.py            ← MessageHandler text router; checks PENDING_INPUT (handles `_export_passphrase`, `_import_passphrase`, `_cat_new_name`, `_pwgen_length`, `_search_query`, `_copy_query`, account-edit) → session → new-account flow
 │
 ├── state/
-│   ├── keys.py                  ← ChatDataKey StrEnum (SESSION, NAV_STACK, PENDING_INPUT, REUSE_DETECTOR, PENDING_NEW_ACCOUNT, PENDING_IMPORT_FILE, LEGACY_SESSION_EXTRAS, AUTOLOCK_JOB_NAME, PW_GEN_DRAFT, PW_GEN_RETURN_TO) — never use raw strings
+│   ├── keys.py                  ← ChatDataKey StrEnum (SESSION, NAV_STACK, PENDING_INPUT, PENDING_NEW_ACCOUNT, PENDING_IMPORT_FILE, LEGACY_SESSION_EXTRAS, AUTOLOCK_JOB_NAME, PW_GEN_DRAFT, PW_GEN_RETURN_TO) — never use raw strings
 │   └── fsm.py                   ← FsmContext + Screen dataclass (push/pop/top/depth/pop_to/reset_to/pending_input/session ops)
 │
 ├── i18n/
@@ -261,7 +261,7 @@ Critical invariants:
 - `cmd_start` MUST `return 0` (entry point returning None ends the conversation).
 - `chat_data[ChatDataKey.SESSION.value]` is the live `Session` dataclass (`aes_key`, `hmac_key`, `expires_at`, optional `_legacy_key`/`_new_passphrase_hash` for in-flight migration). NEVER persisted to disk (filtered by `_SessionStrippingPersistence`).
 - `chat_data[ChatDataKey.PENDING_INPUT.value]` is `{field, id}` for any in-flight one-shot prompt. `cmd_cancel` clears it.
-- `_schedule_autolock` schedules a `run_once` job that calls `_autolock_callback` to wipe session via `FsmContext.clear_session`.
+- `_schedule_autolock` schedules a `run_once` job that calls `_autolock_callback` to wipe session **and every in-progress flow** via `FsmContext.lock()` (pending input, new-account draft, import file, pw-gen draft, nav stack), so the next text can only be a passphrase. `cmd_lock` and `cmd_start` (when locked) do the same, and `dispatcher.on_text` checks the session **before** any pending input. The root conversation has `allow_reentry=True`, so `/start` works mid-conversation (e.g. after an autolock).
 
 ### Passphrase lifecycle (security-critical)
 
@@ -269,7 +269,7 @@ Critical invariants:
 - When the user sends it, `handlers.auth.handle_passphrase_message` (a) deletes the inbound message immediately, (b) routes to `register` (no user), `unlock_legacy` + `migrate_user` (user.crypto_version=1), or `unlock` (user.crypto_version=2).
 - `AuthService.unlock` derives the AES key from `passphrase + salt-extracted-from-encoded-Argon2-hash` and returns a `Session`. The `Session.hmac_key` is `HKDF(aes_key, info=b"reuse-detection")`.
 - Session lifetime: `autolock_minutes * 60` if >0, else 15 minutes default. `_schedule_autolock` job clears the session and notifies the user.
-- `Session` is stored in `chat_data[ChatDataKey.SESSION]`. The custom `_SessionStrippingPersistence.update_chat_data` filters this key (and `REUSE_DETECTOR`, `LEGACY_SESSION_EXTRAS`, `PENDING_IMPORT_FILE`, `PW_GEN_DRAFT`, `PW_GEN_RETURN_TO`) before writing `DB.pkl`.
+- `Session` is stored in `chat_data[ChatDataKey.SESSION]`. The custom `_SessionStrippingPersistence.update_chat_data` filters this key (and `LEGACY_SESSION_EXTRAS`, `PENDING_IMPORT_FILE`, `PW_GEN_DRAFT`, `PW_GEN_RETURN_TO`) before writing `DB.pkl`.
 
 ### Passphrase change (two-phase commit)
 

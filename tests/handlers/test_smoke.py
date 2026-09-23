@@ -23,3 +23,8 @@ def test_application_builds_with_root_conversation(app: Application):
 
 def test_error_handler_registered(app: Application):
     assert app.error_handlers
+
+
+def test_root_conversation_allows_reentry_via_start(app: Application):
+    root = next(h for h in app.handlers[0] if getattr(h, "name", None) == "root")
+    assert root.allow_reentry is True

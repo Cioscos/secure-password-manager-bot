@@ -25,9 +25,7 @@ async def cmd_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if FsmContext(context.chat_data).get_session() is None:  # type: ignore[arg-type]
         await update.effective_chat.send_message(MESSAGES["session_locked"])
         return
-    await update.effective_chat.send_message(
-        "⚙️ Impostazioni", reply_markup=_settings_keyboard()
-    )
+    await update.effective_chat.send_message("⚙️ Impostazioni", reply_markup=_settings_keyboard())
 
 
 async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

@@ -32,6 +32,12 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         pending["field"] if pending else None,
         fsm.get_session() is not None,
     )
+    if fsm.get_session() is None:
+        # Locked: any text is a passphrase. Drop leftover flows so it can't be
+        # captured (and left undeleted) by a search, edit or other pending input.
+        fsm.lock()
+        await auth.handle_passphrase_message(update, context)
+        return
     if pending is not None:
         if pending["field"] == "_export_passphrase":
             text = update.message.text or ""
@@ -67,9 +73,6 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             return
         if await account_edit.handle_pending(update, context):
             return
-    if fsm.get_session() is None:
-        await auth.handle_passphrase_message(update, context)
-        return
     # Otherwise we're inside the account_new flow.
     if ChatDataKey.PENDING_NEW_ACCOUNT.value in context.chat_data:  # type: ignore[operator]
         await account_new.receive_text(update, context)

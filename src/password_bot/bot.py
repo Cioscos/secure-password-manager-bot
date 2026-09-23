@@ -6,6 +6,7 @@ import logging
 from contextlib import asynccontextmanager
 
 import aiosqlite
+from telegram.error import TelegramError
 from telegram.ext import (
     Application,
     ApplicationBuilder,
@@ -48,7 +49,6 @@ class _SessionStrippingPersistence(PicklePersistence):
             if k
             not in {
                 ChatDataKey.SESSION.value,
-                ChatDataKey.REUSE_DETECTOR.value,
                 ChatDataKey.LEGACY_SESSION_EXTRAS.value,
                 ChatDataKey.PENDING_IMPORT_FILE.value,
                 ChatDataKey.PW_GEN_DRAFT.value,
@@ -59,20 +59,27 @@ class _SessionStrippingPersistence(PicklePersistence):
 
 
 async def _daily_stale_scan(context) -> None:
+    from password_bot.i18n.it import MESSAGES
+
     container: Container = context.application.bot_data["container"]
     async with _users_iter(container) as chat_ids:
         for chat_id in chat_ids:
+            user = await container.users.get(chat_id)
+            # Legacy (v1) users never unlocked since the migration: their
+            # password_changed_at is 0, so every account would look stale.
+            if user is None or user.crypto_version == 1:
+                continue
             stale = await container.alerts.find_stale(chat_id=chat_id)
-            if stale:
-                user = await container.users.get(chat_id)
-                if user is None:
-                    continue
-                from password_bot.i18n.it import MESSAGES
-
+            if not stale:
+                continue
+            try:
                 await context.bot.send_message(
                     chat_id,
                     MESSAGES["stale_alert_template"].format(count=len(stale), days=user.alert_days),
                 )
+            except TelegramError as e:
+                # e.g. Forbidden: user blocked the bot or deactivated the account.
+                log.warning("Stale alert not delivered to chat_id=%s: %s", chat_id, e)
 
 
 @asynccontextmanager
@@ -144,6 +151,8 @@ def build_application(config: AppConfig, *, token: str, dev_chat_id: int | None)
             ],
         },
         fallbacks=[CommandHandler("stop", common.cmd_stop)],
+        # /start must work mid-conversation too, e.g. right after an autolock.
+        allow_reentry=True,
         name="root",
         persistent=True,
         per_chat=True,

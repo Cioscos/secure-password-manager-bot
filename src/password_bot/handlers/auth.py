@@ -7,6 +7,7 @@ import logging
 
 from telegram import Update
 from telegram.constants import ParseMode
+from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from password_bot.container import Container
@@ -124,9 +125,12 @@ async def _autolock_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     if job is None or job.chat_id is None:
         return
     chat_data = context.application.chat_data.get(job.chat_id, {})  # type: ignore[union-attr]
-    FsmContext(chat_data).clear_session()
-    await context.bot.send_message(
-        job.chat_id,
-        escape_md(MESSAGES["session_locked"]),
-        parse_mode=ParseMode.MARKDOWN_V2,
-    )
+    FsmContext(chat_data).lock()
+    try:
+        await context.bot.send_message(
+            job.chat_id,
+            escape_md(MESSAGES["session_locked"]),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+    except TelegramError as e:
+        log.warning("Autolock notice not delivered to chat_id=%s: %s", job.chat_id, e)

@@ -149,8 +149,7 @@ async def _confirm_and_save(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         note=draft.get("note"),
         category_id=None,
     )
-    acc = await container.vault.add(new, aes_key=session.aes_key, hmac_key=session.hmac_key)
-    container.chat_reuse_detector(context).add(acc.id, acc.name, draft["password"])
+    await container.vault.add(new, aes_key=session.aes_key, hmac_key=session.hmac_key)
     context.chat_data.pop(ChatDataKey.PENDING_NEW_ACCOUNT.value, None)  # type: ignore[union-attr]
     await update.effective_chat.send_message(
         MESSAGES["account_saved"], reply_markup=back_menu_keyboard(show_menu=True)

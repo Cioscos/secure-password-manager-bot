@@ -118,3 +118,42 @@ async def test_list_stale(repos: AccountRepo):
     await repos.insert(new)
     stale = await repos.list_stale(1, older_than_epoch=5_000)
     assert {r.id for r in stale} == {"a1"}
+
+
+@pytest.mark.asyncio
+async def test_list_reuse_clusters_groups_by_hmac(repos: AccountRepo):
+    for account_id, name, hmac in [
+        ("a1", "GitHub", "same"),
+        ("a2", "GitLab", "same"),
+        ("a3", "Twitter", "unique"),
+        ("a4", "Legacy1", ""),
+        ("a5", "Legacy2", ""),
+    ]:
+        row = _make_row(account_id, name=name)
+        row.password_hmac = hmac
+        await repos.insert(row)
+    clusters = await repos.list_reuse_clusters(1)
+    assert [[r.name for r in c] for c in clusters] == [["GitHub", "GitLab"]]
+
+
+@pytest.mark.asyncio
+async def test_list_reuse_clusters_is_per_chat(repos: AccountRepo, tmp_db_path: Path):
+    users = UserRepo(tmp_db_path)
+    now = int(time.time())
+    await users.create(
+        User(
+            chat_id=2,
+            name="other",
+            passphrase_hash="h",
+            autolock_minutes=15,
+            autolock_reset_on_activity=True,
+            alert_days=180,
+            crypto_version=2,
+            legacy_salt=None,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    await repos.insert(_make_row("a1", chat_id=1))
+    await repos.insert(_make_row("a2", chat_id=2))
+    assert await repos.list_reuse_clusters(1) == []

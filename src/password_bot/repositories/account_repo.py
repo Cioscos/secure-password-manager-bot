@@ -136,6 +136,28 @@ class AccountRepo:
         scored.sort(key=lambda t: t[1], reverse=True)
         return scored
 
+    async def list_reuse_clusters(self, chat_id: int) -> list[list[AccountRow]]:
+        """Groups of 2+ accounts sharing a password (same HMAC). Legacy rows have no HMAC."""
+        async with connect(self._db_path) as conn:
+            cur = await conn.execute(
+                """
+                SELECT * FROM accounts
+                 WHERE chat_id=? AND password_hmac != ''
+                   AND password_hmac IN (
+                       SELECT password_hmac FROM accounts
+                        WHERE chat_id=? AND password_hmac != ''
+                        GROUP BY password_hmac HAVING COUNT(*) >= 2
+                   )
+                 ORDER BY password_hmac, name COLLATE NOCASE
+                """,
+                (chat_id, chat_id),
+            )
+            rows = [_row_to_account_row(r) for r in await cur.fetchall()]
+        clusters: dict[str, list[AccountRow]] = {}
+        for r in rows:
+            clusters.setdefault(r.password_hmac, []).append(r)
+        return list(clusters.values())
+
     async def list_stale(self, chat_id: int, *, older_than_epoch: int) -> list[AccountRow]:
         async with connect(self._db_path) as conn:
             cur = await conn.execute(
