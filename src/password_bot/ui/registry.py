@@ -5,6 +5,7 @@ from __future__ import annotations
 from password_bot.ui.screen import Screen
 from password_bot.ui.screens.account_delete import AccountDeleteScreen
 from password_bot.ui.screens.account_detail import AccountDetailScreen
+from password_bot.ui.screens.account_edit import AccountEditScreen, FieldEditScreen
 from password_bot.ui.screens.account_list import AccountListScreen
 from password_bot.ui.screens.help import HelpScreen
 from password_bot.ui.screens.history import HistoryScreen
@@ -21,6 +22,8 @@ def build_screens() -> dict[str, Screen]:
         AccountListScreen(),
         SearchScreen(),
         AccountDetailScreen(),
+        AccountEditScreen(),
+        FieldEditScreen(),
         HistoryScreen(),
         AccountDeleteScreen(),
     ]
