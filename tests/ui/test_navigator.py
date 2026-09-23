@@ -107,8 +107,75 @@ class Unlock(Screen):
         return Go(home=True, push=ctx.fsm.pop_resume())
 
 
-def make_nav(*, locked: bool = False, chat_data: dict | None = None):
-    screens = {s.name: s for s in (Home(), Items(), Detail(), Unlock())}
+# --- Stub screens used only to exercise Navigator._resume_target's mapping ---
+
+
+class AccountDetail(Screen):
+    name = "account_detail"
+    title = "Account"
+
+    async def render(self, ctx):
+        return View("account_detail")
+
+
+class FieldEdit(Screen):
+    name = "field_edit"
+    title = "Modifica campo"
+
+    async def render(self, ctx):
+        return View("field_edit")
+
+
+class PasswordChange(Screen):
+    name = "password_change"
+    title = "Cambia password"
+
+    async def render(self, ctx):
+        return View("password_change")
+
+
+class HistoryScreen(Screen):
+    name = "history"
+    title = "Storico"
+
+    async def render(self, ctx):
+        return View("history")
+
+
+class AccountDelete(Screen):
+    name = "account_delete"
+    title = "Elimina account"
+
+    async def render(self, ctx):
+        return View("account_delete")
+
+
+class AccountNew(Screen):
+    name = "account_new"
+    title = "Nuovo account"
+
+    async def render(self, ctx):
+        return View("account_new")
+
+
+class Generator(Screen):
+    name = "generator"
+    title = "Generatore"
+
+    async def render(self, ctx):
+        return View("generator")
+
+
+class CategoryPick(Screen):
+    name = "category_pick"
+    title = "Categoria"
+
+    async def render(self, ctx):
+        return View("category_pick")
+
+
+def make_nav(*, locked: bool = False, chat_data: dict | None = None, extra_screens=()):
+    screens = {s.name: s for s in (Home(), Items(), Detail(), Unlock(), *extra_screens)}
     bot = FakeBot()
     jq = FakeJobQueue()
     app = SimpleNamespace(
@@ -491,3 +558,62 @@ async def test_timer_waits_for_in_flight_render_then_locks():
     await asyncio.wait_for(asyncio.gather(rendering, locking), timeout=1)
     assert stack(nav) == ["unlock"]
     assert bot.edits[-1].text.endswith("unlock")
+
+
+# --- _resume_target mapping (fix round 1: previously untested) ---
+
+_ACCOUNT_DETAIL_SUBSCREENS = ("field_edit", "password_change", "history", "account_delete")
+_ACCOUNT_PARENT_SUBSCREENS = ("generator", "category_pick", "category_form", "category_icon")
+_ALL_MAPPED_NAMES = (
+    "account_edit",
+    *_ACCOUNT_DETAIL_SUBSCREENS,
+    *_ACCOUNT_PARENT_SUBSCREENS,
+    "category_delete",
+)
+
+
+async def test_lock_resumes_subscreens_to_their_account_detail_parent():
+    extra = [AccountDetail(), FieldEdit(), PasswordChange(), HistoryScreen(), AccountDelete()]
+    for name in _ACCOUNT_DETAIL_SUBSCREENS:
+        nav, _, _ = make_nav(extra_screens=extra)
+        nav.fsm.reset_to(Frame("home", {}))
+        nav.fsm.push(Frame("account_detail", {"id": "acc1"}))
+        nav.fsm.push(Frame(name, {"id": "acc1"}))
+        await nav.lock()
+        assert nav.chat_data[RESUME] == Frame("account_detail", {"id": "acc1"}), name
+
+
+async def test_lock_resumes_generator_and_category_pick_to_their_stack_parent():
+    extra_new = [AccountNew(), Generator(), CategoryPick()]
+    nav, _, _ = make_nav(extra_screens=extra_new)
+    nav.fsm.reset_to(Frame("home", {}))
+    nav.fsm.push(Frame("account_new", {"draft": True}))
+    nav.fsm.push(Frame("generator", {}))
+    await nav.lock()
+    assert nav.chat_data[RESUME] == Frame("account_new", {"draft": True})
+
+    extra_detail = [AccountDetail(), CategoryPick()]
+    nav2, _, _ = make_nav(extra_screens=extra_detail)
+    nav2.fsm.reset_to(Frame("home", {}))
+    nav2.fsm.push(Frame("account_detail", {"id": "acc9"}))
+    nav2.fsm.push(Frame("category_pick", {}))
+    await nav2.lock()
+    assert nav2.chat_data[RESUME] == Frame("account_detail", {"id": "acc9"})
+
+
+async def test_resume_target_generator_without_parent_falls_back_to_home():
+    nav, _, _ = make_nav(extra_screens=[Generator()])
+    nav.fsm.reset_to(Frame("home", {}))
+    nav.fsm.push(Frame("generator", {}))
+    assert nav._resume_target(Frame("generator", {})) == Frame("home", {})
+
+
+async def test_resume_target_is_idempotent_for_every_mapped_name():
+    nav, _, _ = make_nav(extra_screens=[AccountDetail(), AccountNew()])
+    nav.fsm.reset_to(Frame("home", {}))
+    nav.fsm.push(Frame("account_detail", {"id": "x"}))
+    for name in _ALL_MAPPED_NAMES:
+        frame = Frame(name, {"id": "x"})
+        once = nav._resume_target(frame)
+        twice = nav._resume_target(once)
+        assert twice == once, name
