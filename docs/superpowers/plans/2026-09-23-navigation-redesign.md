@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Dependency: `python-telegram-bot[job-queue,callback-data]>=22.8` in `pyproject.toml`; lock refreshed with `uv lock --upgrade-package python-telegram-bot`.
-- All bot text is sent with `ParseMode.MARKDOWN_V2`. Every dynamic or static plain string goes through `escape_md()`; secrets shown in clear go through `code_inline()`.
+- Screen text and revealed secrets use `ParseMode.MARKDOWN_V2`: plain text segments go through `escape_md()` and secrets through `code_inline()`. Intentional Markdown delimiters stay literal. Button labels, callback toasts, existing plain-text document captions, daily alerts and `/stop` messages do not use Markdown escaping. Developer error reports explicitly use HTML escaping.
 - `Act` callback payloads carry only screen names, action names, ids, page numbers and list indices — **never** a username, password, URL or note (the PTB callback-data cache is pickled into `DB.pkl`).
 - In-progress flow data lives only under `ChatDataKey.FLOW`, which is stripped from persistence and cleared by `FsmContext.lock()`.
 - Stack frame args (`Frame.data`) hold only ids, page numbers, flags and search queries.
@@ -22,7 +22,7 @@
 - Account list page size: **8**. Category names: required, **≤ 32** chars, unique per chat case-insensitively. Category icon palette, exactly: `💼 🏦 👤 🎮 🛒 📧 🌐 🏠 💳 📱 🎓 ⭐`.
 - UI strings are Italian and copied verbatim from the code blocks in this plan.
 - Lint/format: `uv run ruff check src tests` and `uv run ruff format src tests` (line length 100). Tests: `uv run pytest -q`.
-- Every commit message ends with a blank line and `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`.
+- Commit attribution must describe the actual contributors; do not hard-code a different agent/model as co-author.
 
 ## Review Focus
 
@@ -34,9 +34,25 @@
 
 ## Notes on the spec
 
+**Review (2026-09-23).** This revision corrects the executable examples, not the running bot. Tasks 3–6 now cover import preflight, real legacy pickle loading, deadline checks, serialized jobs/updates, safe resume targets, draft cleanup and render-generation checks. Add the regression blocks below in their owning tasks before implementing them.
+
+- **API verification:** PTB 22.8 supports `KeyboardButtonStyle` and `InlineKeyboardButton(style=...)`; styling was introduced in 22.7 and older clients may ignore it ([PTB documentation](https://docs.python-telegram-bot.org/en/v22.8/telegram.inlinekeyboardbutton.html)). The `tg://time` Markdown syntax is documented by the [Telegram Bot API](https://core.telegram.org/bots/api#markdownv2-style). Real-client date/copy-button behavior still needs the manual check.
+- **Shell:** fenced `bash` commands below are Bash examples. In PowerShell, run each command separately, use `$env:KEYRING = './keys'` before launch and avoid Bash `\` line continuations. Coverage verification explicitly enforces the same 60% gate as CI.
+- **Category matching:** use `casefold()` for Unicode names. The legacy SQLite uniqueness constraint remains case-sensitive: this is an application-level check under serialized chat updates, not a new database invariant. Existing duplicates differing only by case are not merged automatically.
+- **Runtime state:** `bot_data` holds services, screens and per-chat locks and is excluded from persistence. Only chat navigation and callback data are persisted. Per-chat serialization also covers jobs, which are not serialized by `concurrent_updates(False)` alone.
+- **Resume:** after losing `FLOW`, restart account creation at the name step; return dependent edit/generator/category flows to the nearest account detail or creation root. Never reopen a generator with a missing caller. A closed detail stays closed until explicit `Riapri`.
+
+**Recommended follow-ups (separate from the corrections below):**
+
+1. Paginate Search, Health, Categories and the category picker. Search currently cuts off after `MAX_RESULTS`, Health after `MAX_BUTTONS`, and category keyboards grow without a bound. Reuse the eight-item page pattern so every result stays reachable.
+2. Set explicit import size and UI text limits. A `.json` extension does not bound memory use; long notes and imported values can exceed Telegram's message limit. Check file size before download and after reading; shorten display text before Markdown escaping without truncating stored secrets.
+3. Make import writes transactional and design an authenticated, versioned export envelope. Preflight prevents changes on malformed/wrong-passphrase input, but repository methods commit separately, so database failures can still leave a partial import. Export v1 cannot authenticate metadata or an empty export, does not preserve category icons, and omits the Argon2 parameters needed for portability across differently configured installations.
+4. Track secret-message cleanup deadlines across restarts. JobQueue jobs do not survive restart; `LIVE_MESSAGE_ID` alone cannot guarantee 30/60-second cleanup across an outage. Store only ids/deadlines, scrub on startup, and document Telegram deletion as best effort.
+5. Restrict vault handlers to private chats before deployment, or define per-user authorization for groups. The existing conversation/session is per chat (`per_user=False`), so group participants would share a vault session.
+
 - **No `sensitive_input` flag.** The spec had screens declare sensitive text input. The Navigator deletes *every* user text message after reading it, so the flag would change nothing and is dropped.
 - **Messages outside the live message, by design:** revealed secrets (self-destruct after 30 s, no buttons), the export `.json` document, the daily stale-password alert (a job message; its `/list_stale` hint opens Health) and the `/stop` goodbye (the conversation has ended). Everything else is the single live message.
-- **Autolock choices** become 5/15/30/60 min (the old `0` meant "default 15" and was confusing) and **stale threshold** choices 90/180/365 days (the old `0` flagged every password).
+- **Autolock choices** become 5/15/30/60 min (legacy `0` still means an effective 15 min) and **stale threshold** choices 90/180/365 days. Existing stored thresholds, including `0`, remain unchanged until the user selects a new one. This plan keeps the existing fixed deadline from unlock; it does not implement sliding expiry on activity. Settings apply at the next unlock.
 
 ---
 
@@ -135,20 +151,20 @@ uv sync --dev
 - [ ] **Step 4: Run the full suite**
 
 Run: `uv run pytest -q`
-Expected: all tests PASS (157 existing + 3 new).
+Expected: all tests PASS; record the collected count rather than assuming a fixed baseline.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add pyproject.toml uv.lock tests/test_ptb_features.py
-git commit -m "Upgrade python-telegram-bot to 22.8 for button styles
-
-Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
+git commit -m "Upgrade python-telegram-bot to 22.8 for button styles"
 ```
 
 ---
 
 ### Task 2: Repository and service additions
+
+Include the Task 2 regression block collected under Task 16 in this task's failing tests.
 
 **Files:**
 - Modify: `src/password_bot/models/category.py`
@@ -309,7 +325,7 @@ class Category:
     icon: str | None  # stored in the legacy `categories.color` column
 ```
 
-`src/password_bot/repositories/category_repo.py` — replace `_row_to_category`, `create`, and add the new methods (keep `get`, `get_by_name`, `list_for_chat`, `rename`, `delete` unchanged):
+`src/password_bot/repositories/category_repo.py` — replace `_row_to_category`, `create`, and add the new methods (keep `get`, `list_for_chat`, `rename`, `delete` unchanged; replace `get_by_name` as shown):
 
 ```python
 def _row_to_category(row: aiosqlite.Row) -> Category:
@@ -324,6 +340,13 @@ def _row_to_category(row: aiosqlite.Row) -> Category:
                 (cat.id, cat.chat_id, cat.name, cat.icon),
             )
 
+    async def get_by_name(self, chat_id: int, name: str) -> Category | None:
+        key = name.casefold()
+        return next(
+            (cat for cat in await self.list_for_chat(chat_id) if cat.name.casefold() == key),
+            None,
+        )
+
     async def set_icon(self, cat_id: str, icon: str | None) -> None:
         async with connect(self._db_path) as conn:
             await conn.execute("UPDATE categories SET color=? WHERE id=?", (icon, cat_id))
@@ -334,7 +357,7 @@ def _row_to_category(row: aiosqlite.Row) -> Category:
                 """
                 SELECT c.*, COUNT(a.id) AS n
                   FROM categories c
-                  LEFT JOIN accounts a ON a.category_id = c.id
+                  LEFT JOIN accounts a ON a.category_id = c.id AND a.chat_id = c.chat_id
                  WHERE c.chat_id=?
                  GROUP BY c.id
                  ORDER BY c.name COLLATE NOCASE
@@ -427,14 +450,14 @@ Expected: all PASS.
 ```bash
 uv run ruff format src tests && uv run ruff check src tests
 git add src tests
-git commit -m "Add category icons/counts, account filters, HMAC lookup, username suggestions
-
-Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
+git commit -m "Add category icons/counts, account filters, HMAC lookup, username suggestions"
 ```
 
 ---
 
 ### Task 3: Import restores categories
+
+Include the Task 3 regression block collected under Task 16 in this task's failing tests.
 
 **Files:**
 - Modify: `src/password_bot/services/export_service.py` (`import_payload`)
@@ -526,16 +549,49 @@ import uuid
 from password_bot.models.category import Category
 ```
 
-In `import_payload`, after the `existing = {...}` block and before `added = skipped = overwritten = 0`, insert:
+In `import_payload`, after the `existing = {...}` try/except and before any writes, insert the following preflight and category mapping. Validate **all** items before creating categories or deleting/replacing accounts; a wrong passphrase or a corrupt later item must not leave imported categories/accounts behind. Export v1 does not authenticate category metadata or an empty export, and does not carry icons; do not claim otherwise. Full rollback on database failures is a separate improvement listed in the review notes.
+
+Replace the current salt decoding with `base64.b64decode(schema.salt, validate=True)` inside a try/except `(ValueError, binascii.Error)` that raises `InvalidExportFileError`, and reject a decoded salt whose length is not `SALT_LEN`. Add `import binascii`.
 
 ```python
-        category_ids = {c.name.lower(): c.id for c in await self._categories.list_for_chat(chat_id)}
+        category_names = [*schema.categories, *(i.category for i in schema.items if i.category)]
+        if any(not name.strip() or len(name.strip()) > 32 for name in category_names):
+            raise InvalidExportFileError()
+
+        decrypted = []
+        for item in schema.items:
+            try:
+                password = self._cipher.decrypt(item.password_enc, export_key).decode("utf-8")
+                username = (
+                    self._cipher.decrypt(item.username_enc, export_key).decode("utf-8")
+                    if item.username_enc else None
+                )
+                url = (
+                    self._cipher.decrypt(item.url_enc, export_key).decode("utf-8")
+                    if item.url_enc else None
+                )
+                note = (
+                    self._cipher.decrypt(item.note_enc, export_key).decode("utf-8")
+                    if item.note_enc else None
+                )
+            except Exception as e:
+                raise InvalidPassphraseError() from e
+            decrypted.append((item, password, username, url, note))
+```
+
+Replace the original `for item in schema.items:` loop and its per-field decryption statements with `for item, password, username, url, note in decrypted:`; retain the existing merge logic starting at `existing_match = ...`. Do not leave the old decrypt loop in place.
+
+Then insert before `added = skipped = overwritten = 0`:
+
+
+```python
+        category_ids = {c.name.casefold(): c.id for c in await self._categories.list_for_chat(chat_id)}
 
         async def category_id_for(name: str | None) -> str | None:
-            clean = (name or "").strip()[:32]
+            clean = (name or "").strip()  # preflight rejected invalid lengths; never truncate names
             if not clean:
                 return None
-            key = clean.lower()
+            key = clean.casefold()
             if key not in category_ids:
                 cat = Category(id=str(uuid.uuid4()), chat_id=chat_id, name=clean, icon=None)
                 await self._categories.create(cat)
@@ -546,7 +602,7 @@ In `import_payload`, after the `existing = {...}` block and before `added = skip
             await category_id_for(cat_name)
 ```
 
-and in the final `NewAccount(...)` replace `category_id=None,` with:
+After preflight, restore the declared categories and use the same mapping for each imported item. In the final `NewAccount(...)` replace `category_id=None,` with:
 
 ```python
                     category_id=await category_id_for(item.category),
@@ -555,16 +611,14 @@ and in the final `NewAccount(...)` replace `category_id=None,` with:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/services/test_export_service.py -q`
-Expected: PASS (all 5).
+Expected: PASS, including the invalid-import regressions below.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 uv run ruff format src tests && uv run ruff check src tests
 git add src tests
-git commit -m "Restore categories when importing a vault export
-
-Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
+git commit -m "Restore categories when importing a vault export"
 ```
 
 ---
@@ -584,7 +638,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 - Produces:
   - `ChatDataKey.FLOW = "flow"`, `LIVE_MESSAGE_ID = "live_message_id"`, `LIVE_TOKEN = "live_token"`, `RESUME = "resume"`.
   - `state.fsm.Frame(name: str, data: dict = {})`, alias `Screen = Frame`; `FsmContext.frames() -> list[Frame]`, `set_resume(frame)`, `pop_resume() -> Frame | None`; `lock()` also clears `FLOW` and `RESUME`.
-  - `ui.callbacks.NAV = "_nav"`, `Act(screen: str, action: str, arg: str | int | None = None)` (frozen).
+  - `ui.callbacks.NAV = "_nav"`, `Act(screen: str, action: str, arg: str | int | None = None, token: int | None = None)` (frozen).
   - `ui.screen`: `TEXT_NOT_ACCEPTED`, `View(text, keyboard=None, expire_after=None)`, `Ctx(container, chat_id, chat_data, args, back_label=None, bot=None, application=None, user_name="", progress=None)` with `.fsm`, `.session`, `.flow(key) -> dict`, `.drop_flow(key)`; results `Go(push, pop, pop_to, pop_to_inclusive, home, render, notice, toast)`, `Reveal(text, seconds=30, toast=None)`, `Lock()`, `Result`; helpers `open_screen(name, **args)`, `replace(name, *, notice=None, toast=None, **args)`, `back(notice=None, toast=None)`, `refresh(notice=None, toast=None)`, `home(notice=None)`, `pop_to(name, notice=None, toast=None)`, `finish(flow_screen, *, then=None, notice=None, toast=None)`; base class `Screen` (class vars `name`, `title`, `requires_session=True`, `accepts_text=False`, `accepts_document=False`; async `on_enter`, `render`, `on_action`, `on_text`, `on_document`, `render_expired`).
   - `ui.views`: `PRIMARY`, `SUCCESS`, `DANGER`, `COPY_TEXT_MAX=256`, `LABEL_MAX=32`, `btn(label, screen, action, arg=None, *, style=None)`, `nav_btn(label, action)`, `copy_btn(label, value, *, style=None) -> Button | None`, `url_btn(label, raw) -> Button | None`, `footer(back_label) -> list[Button]`, `keyboard(*rows) -> InlineKeyboardMarkup`, `normalize_url(raw) -> str | None`, `md_date(ts) -> str`, `plain_date(ts) -> str`, `label(text, max_len=LABEL_MAX) -> str`, `category_label(cat) -> str`.
 
@@ -709,8 +763,15 @@ def test_code_inline_escapes_backslash_and_backtick():
 
 
 def test_old_pickled_screen_name_still_resolves():
-    # pickle resolves classes by module attribute; old DB.pkl files reference `Screen`.
+    # Protocol-0 GLOBAL explicitly names the historical class, not the new Frame name.
     assert importlib.import_module("password_bot.state.fsm").Screen is Frame
+    # A real instance produced by the old slotted Screen class (no production data).
+    old_instance = bytes.fromhex(
+        "80049547000000000000008c1670617373776f72645f626f742e73746174652e66736d948c0653637265656e9493942981944e7d94288c046e616d65948c046d656e75948c0464617461947d94758694622e"
+    )
+    restored = pickle.loads(old_instance)
+    assert isinstance(restored, Frame)
+    assert restored.name == "menu" and restored.data == {}
 
 
 def test_frames_and_resume():
@@ -934,6 +995,7 @@ class Act:
     screen: str
     action: str
     arg: str | int | None = None
+    token: int | None = None  # Navigator stamps the current render; no secrets
 ```
 
 `src/password_bot/ui/screen.py`:
@@ -967,7 +1029,7 @@ class View:
 
 @dataclass(slots=True)
 class Ctx:
-    """Everything a screen may use. `args` is the top frame's data (read-only by convention)."""
+    """Screen context. `args` belongs to the frame; only navigation flags may be mutated."""
 
     container: Any
     chat_id: int
@@ -1209,14 +1271,14 @@ Expected: all PASS (existing `test_fsm_context.py` still imports `Screen` — th
 ```bash
 uv run ruff format src tests && uv run ruff check src tests
 git add src tests
-git commit -m "Add UI foundations: Act payload, Screen contract, view helpers
-
-Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
+git commit -m "Add UI foundations: Act payload, Screen contract, view helpers"
 ```
 
 ---
 
 ### Task 5: Navigator
+
+Include the Task 5 regression block collected under Task 16 in this task's failing tests.
 
 **Files:**
 - Create: `src/password_bot/ui/navigator.py`
@@ -1344,6 +1406,7 @@ def act(view: View, text: str) -> Act:
 
 from __future__ import annotations
 
+from dataclasses import replace as dc_replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -1443,7 +1506,7 @@ class Unlock(Screen):
     async def on_text(self, ctx, text):
         if text != "pw":
             return refresh(notice="wrong")
-        ctx.fsm.set_session(object())
+        ctx.fsm.set_session(SimpleNamespace(expires_at=float("inf")))
         return Go(home=True, push=ctx.fsm.pop_resume())
 
 
@@ -1454,11 +1517,13 @@ def make_nav(*, locked: bool = False, chat_data: dict | None = None):
     app = SimpleNamespace(bot_data={"container": SimpleNamespace(), "screens": screens}, job_queue=jq)
     data = {} if chat_data is None else chat_data
     if not locked:
-        data[SESSION] = object()
+        data[SESSION] = SimpleNamespace(expires_at=float("inf"))
     return Navigator(application=app, bot=bot, chat_id=1, chat_data=data), bot, jq
 
 
-def callback(data, message_id):
+def callback(data, message_id, *, token=None):
+    if isinstance(data, Act) and data.token is None:
+        data = dc_replace(data, token=token)
     query = SimpleNamespace(
         data=data,
         message=SimpleNamespace(message_id=message_id),
@@ -1498,7 +1563,7 @@ async def test_callback_edits_live_message_in_place():
     nav, bot, _ = make_nav()
     await nav.command("home")
     live = nav.chat_data[LIVE]
-    update = callback(Act("home", "open"), live)
+    update = callback(Act("home", "open"), live, token=nav.chat_data.get(ChatDataKey.LIVE_TOKEN.value))
     await nav.on_callback(update)
     assert bot.edits[-1].message_id == live
     assert bot.edits[-1].text == "items 1 back=Home"
@@ -1508,7 +1573,7 @@ async def test_callback_edits_live_message_in_place():
 async def test_toast_is_the_callback_answer():
     nav, _, _ = make_nav()
     await nav.command("items")
-    update = callback(Act("items", "other"), nav.chat_data[LIVE])
+    update = callback(Act("items", "other"), nav.chat_data[LIVE], token=nav.chat_data.get(ChatDataKey.LIVE_TOKEN.value))
     await nav.on_callback(update)
     update.callback_query.answer.assert_awaited_once_with("ok")
 
@@ -1518,7 +1583,7 @@ async def test_edit_failure_falls_back_to_new_message():
     await nav.command("home")
     old = nav.chat_data[LIVE]
     bot.edit_error = BadRequest("Message to edit not found")
-    await nav.on_callback(callback(Act("home", "open"), old))
+    await nav.on_callback(callback(Act("home", "open"), old, token=nav.chat_data.get(ChatDataKey.LIVE_TOKEN.value)))
     assert old in bot.deleted
     assert nav.chat_data[LIVE] != old
     assert bot.sent[-1].text.startswith("items")
@@ -1537,12 +1602,12 @@ async def test_back_and_home_navigation():
     nav, bot, _ = make_nav()
     await nav.command("items")
     live = nav.chat_data[LIVE]
-    await nav.on_callback(callback(Act("items", "detail"), live))
+    await nav.on_callback(callback(Act("items", "detail"), live, token=nav.chat_data.get(ChatDataKey.LIVE_TOKEN.value)))
     assert stack(nav) == ["home", "items", "detail"]
     assert bot.edits[-1].reply_markup.inline_keyboard[0][0].text == "🔙 Lista"
-    await nav.on_callback(callback(Act(NAV, "back"), live))
+    await nav.on_callback(callback(Act(NAV, "back"), live, token=nav.chat_data.get(ChatDataKey.LIVE_TOKEN.value)))
     assert stack(nav) == ["home", "items"]
-    await nav.on_callback(callback(Act(NAV, "home"), live))
+    await nav.on_callback(callback(Act(NAV, "home"), live, token=nav.chat_data.get(ChatDataKey.LIVE_TOKEN.value)))
     assert stack(nav) == ["home"]
 
 
@@ -1550,8 +1615,8 @@ async def test_pop_to_inclusive_returns_below_the_frame():
     nav, _, _ = make_nav()
     await nav.command("items")
     live = nav.chat_data[LIVE]
-    await nav.on_callback(callback(Act("items", "detail"), live))
-    update = callback(Act("detail", "delete"), live)
+    await nav.on_callback(callback(Act("items", "detail"), live, token=nav.chat_data.get(ChatDataKey.LIVE_TOKEN.value)))
+    update = callback(Act("detail", "delete"), live, token=nav.chat_data.get(ChatDataKey.LIVE_TOKEN.value))
     await nav.on_callback(update)
     assert stack(nav) == ["home", "items"]
     update.callback_query.answer.assert_awaited_once_with("deleted")
@@ -1576,7 +1641,7 @@ async def test_text_on_screen_without_input_shows_notice():
 async def test_button_for_another_screen_rerenders_without_acting():
     nav, _, _ = make_nav()
     await nav.command("items")
-    update = callback(Act("home", "open"), nav.chat_data[LIVE])
+    update = callback(Act("home", "open"), nav.chat_data[LIVE], token=nav.chat_data.get(ChatDataKey.LIVE_TOKEN.value))
     await nav.on_callback(update)
     update.callback_query.answer.assert_awaited_once_with(STALE_BUTTON)
     assert stack(nav) == ["home", "items"]
@@ -1586,7 +1651,7 @@ async def test_button_on_old_message_opens_home_in_new_message():
     nav, bot, _ = make_nav()
     await nav.command("items")
     live = nav.chat_data[LIVE]
-    update = callback(Act("items", "detail"), live - 50)
+    update = callback(Act("items", "detail"), live - 50, token=nav.chat_data.get(ChatDataKey.LIVE_TOKEN.value))
     await nav.on_callback(update)
     update.callback_query.answer.assert_awaited_once_with(STALE_BUTTON)
     update.callback_query.edit_message_reply_markup.assert_awaited_once_with(reply_markup=None)
@@ -1597,7 +1662,7 @@ async def test_button_on_old_message_opens_home_in_new_message():
 async def test_legacy_string_callback_is_stale():
     nav, _, _ = make_nav()
     await nav.command("items")
-    update = callback("view:show:password:x", nav.chat_data[LIVE])
+    update = callback("view:show:password:x", nav.chat_data[LIVE], token=nav.chat_data.get(ChatDataKey.LIVE_TOKEN.value))
     await nav.on_callback(update)
     update.callback_query.answer.assert_awaited_once_with(STALE_BUTTON)
     assert stack(nav) == ["home"]
@@ -1605,9 +1670,10 @@ async def test_legacy_string_callback_is_stale():
 
 async def test_missing_live_id_adopts_the_pressed_message():
     nav, bot, _ = make_nav()
+    nav.chat_data[ChatDataKey.LIVE_TOKEN.value] = 1
     nav.fsm.reset_to(Frame("home"))
     nav.fsm.push(Frame("items", {"page": 1}))
-    await nav.on_callback(callback(Act("items", "detail"), 55))
+    await nav.on_callback(callback(Act("items", "detail"), 55, token=nav.chat_data.get(ChatDataKey.LIVE_TOKEN.value)))
     assert bot.edits[-1].message_id == 55
     assert nav.chat_data[LIVE] == 55
 
@@ -1616,7 +1682,7 @@ async def test_locked_button_parks_target_then_resumes_after_unlock():
     nav, _, _ = make_nav()
     await nav.command("items")
     del nav.chat_data[SESSION]
-    update = callback(Act("items", "detail"), nav.chat_data[LIVE])
+    update = callback(Act("items", "detail"), nav.chat_data[LIVE], token=nav.chat_data.get(ChatDataKey.LIVE_TOKEN.value))
     await nav.on_callback(update)
     update.callback_query.answer.assert_awaited_once_with(LOCKED_TOAST)
     assert stack(nav) == ["unlock"]
@@ -1656,7 +1722,7 @@ async def test_lock_resets_to_unlock_and_cancels_jobs():
 async def test_detail_expires_into_closed_view():
     nav, bot, jq = make_nav()
     await nav.command("items")
-    await nav.on_callback(callback(Act("items", "detail"), nav.chat_data[LIVE]))
+    await nav.on_callback(callback(Act("items", "detail"), nav.chat_data[LIVE], token=nav.chat_data.get(ChatDataKey.LIVE_TOKEN.value)))
     job = jq.get_jobs_by_name(expire_job_name(1))[0]
     assert job.when == 60
     await nav.on_expired(job.data)
@@ -1667,9 +1733,9 @@ async def test_expiry_is_ignored_after_navigating_away():
     nav, bot, jq = make_nav()
     await nav.command("items")
     live = nav.chat_data[LIVE]
-    await nav.on_callback(callback(Act("items", "detail"), live))
+    await nav.on_callback(callback(Act("items", "detail"), live, token=nav.chat_data.get(ChatDataKey.LIVE_TOKEN.value)))
     token = jq.get_jobs_by_name(expire_job_name(1))[0].data
-    await nav.on_callback(callback(Act(NAV, "back"), live))
+    await nav.on_callback(callback(Act(NAV, "back"), live, token=nav.chat_data.get(ChatDataKey.LIVE_TOKEN.value)))
     assert jq.get_jobs_by_name(expire_job_name(1)) == []
     await nav.on_expired(token)
     assert bot.edits[-1].text != "closed"
@@ -1679,8 +1745,8 @@ async def test_reveal_sends_code_message_scheduled_for_deletion():
     nav, bot, jq = make_nav()
     await nav.command("items")
     live = nav.chat_data[LIVE]
-    await nav.on_callback(callback(Act("items", "detail"), live))
-    await nav.on_callback(callback(Act("detail", "reveal"), live))
+    await nav.on_callback(callback(Act("items", "detail"), live, token=nav.chat_data.get(ChatDataKey.LIVE_TOKEN.value)))
+    await nav.on_callback(callback(Act("detail", "reveal"), live, token=nav.chat_data.get(ChatDataKey.LIVE_TOKEN.value)))
     assert bot.sent[-1].text == "`s3cr\\`t`"
     assert any(j.name.startswith("delete:") and j.when == 30 for j in jq.jobs)
 ```
@@ -1699,11 +1765,15 @@ Expected: FAIL at collection — `ModuleNotFoundError: No module named 'password
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
+import time
+from dataclasses import replace as dc_replace
+from functools import wraps
 from typing import Any
 
-from telegram import LinkPreviewOptions
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions
 from telegram.constants import ParseMode
 from telegram.error import BadRequest, TelegramError
 
@@ -1750,8 +1820,32 @@ async def _expire_job(context: Any) -> None:
     await Navigator.from_context(context, job.chat_id).on_expired(job.data)
 
 
+class _ChatGate:
+    def __init__(self) -> None:
+        self.lock = asyncio.Lock()
+        self.owner = None
+
+
+def serialized(method):
+    """Serialize updates and jobs per chat, allowing internal Navigator calls."""
+    @wraps(method)
+    async def wrapped(self, *args, **kwargs):
+        gates = self.application.bot_data.setdefault("ui_gates", {})
+        gate = gates.setdefault(self.chat_id, _ChatGate())
+        task = asyncio.current_task()
+        if gate.owner is task:
+            return await method(self, *args, **kwargs)
+        async with gate.lock:
+            gate.owner = task
+            try:
+                return await method(self, *args, **kwargs)
+            finally:
+                gate.owner = None
+    return wrapped
+
+
 class Navigator:
-    """The only component that talks to Telegram for UI purposes."""
+    """Owns UI messages, state and per-chat serialization with timer jobs."""
 
     def __init__(
         self,
@@ -1794,7 +1888,12 @@ class Navigator:
     # ------------------------------------------------------------------ stack
 
     def _locked(self) -> bool:
-        return self.fsm.get_session() is None
+        session = self.fsm.get_session()
+        if session is not None and session.expires_at <= int(time.time()):
+            self.fsm.clear_session()
+            self.chat_data.pop(ChatDataKey.FLOW.value, None)
+            session = None
+        return session is None
 
     def _top(self) -> Frame:
         if self.fsm.depth() == 0 or self.fsm.top().name not in self.screens:
@@ -1821,8 +1920,24 @@ class Navigator:
             progress=self._progress,
         )
 
+    def _resume_target(self, frame: Frame | None) -> Frame | None:
+        # Only restartable screens may survive the loss of FLOW and parent frames.
+        if frame is None:
+            return None
+        if frame.name in {"account_edit", "field_edit", "password_change", "history", "account_delete"}:
+            return Frame("account_detail", {"id": frame.data.get("id")})
+        if frame.name in {"generator", "category_pick", "category_form", "category_icon", "category_delete"}:
+            for parent in reversed(self.fsm.frames()):
+                if parent.name in {"account_new", "account_detail"}:
+                    return Frame(parent.name, dict(parent.data))
+            return Frame(HOME, {})
+        return Frame(frame.name, dict(frame.data))
+
     def _park_and_unlock(self, frame: Frame | None) -> None:
-        """Remember where the user was going, then show the unlock screen."""
+        """Remember a restartable target, never an action or a partial draft."""
+        frame = self._resume_target(frame)
+        self.fsm.pop_resume()  # a later /menu must override an earlier /list target
+        self.chat_data.pop(ChatDataKey.FLOW.value, None)
         if (
             frame is not None
             and frame.name not in (HOME, UNLOCK)
@@ -1833,11 +1948,15 @@ class Navigator:
         self.fsm.reset_to(Frame(UNLOCK, {}))
 
     async def _push(self, frame: Frame) -> None:
+        if self._locked() and self.screens[frame.name].requires_session:
+            self._park_and_unlock(frame)
+            return
         self.fsm.push(frame)
         await self.screens[frame.name].on_enter(self._ctx(frame))
 
     # -------------------------------------------------------------- rendering
 
+    @serialized
     async def show(self, *, notice: str | None = None, new_message: bool = False) -> None:
         top = self._top()
         if self._locked() and self.screens[top.name].requires_session:
@@ -1846,12 +1965,27 @@ class Navigator:
         view = await self.screens[top.name].render(self._ctx(top))
         await self.present(view, notice=notice, new_message=new_message)
 
+    @serialized
     async def present(
-        self, view: View, *, notice: str | None = None, new_message: bool = False
+        self, view: View, *, notice: str | None = None, new_message: bool = False,
+        enforce_session: bool = True,
     ) -> None:
+        # Rendering may have awaited I/O across the session deadline.
+        if enforce_session and self.screens[self._top().name].requires_session and self._locked():
+            await self.show(notice=LOCKED_TOAST, new_message=new_message)
+            return
         text = f"{escape_md(notice)}\n\n{view.text}" if notice else view.text
         token = int(self.chat_data.get(_TOKEN, 0)) + 1
         self.chat_data[_TOKEN] = token
+        if view.keyboard is not None:
+            view = dc_replace(view, keyboard=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        b.text, callback_data=dc_replace(b.callback_data, token=token), style=b.style
+                    ) if isinstance(b.callback_data, Act) else b
+                    for b in row
+                ] for row in view.keyboard.inline_keyboard
+            ]))
         live = self.chat_data.get(_LIVE)
         if live is not None and not new_message:
             try:
@@ -1864,9 +1998,13 @@ class Navigator:
                     link_preview_options=_NO_PREVIEW,
                 )
             except BadRequest as e:
-                if "not modified" not in str(e).lower():
-                    log.info("Live message %s not editable (%s); sending a new one", live, e)
+                reason = str(e).lower()
+                if "not modified" in reason:
+                    pass
+                elif "message to edit not found" in reason or "message can't be edited" in reason:
                     await self._send_live(text, view, replacing=live)
+                else:
+                    raise  # malformed Markdown/URL/oversized text is not a missing message
         else:
             await self._send_live(text, view, replacing=live)
         self._schedule_expiry(view.expire_after, token)
@@ -1905,9 +2043,11 @@ class Navigator:
 
     # ---------------------------------------------------------------- routing
 
+    @serialized
     async def command(self, name: str, args: dict[str, Any] | None = None) -> None:
         """Open a screen from a slash command, in a new live message at the bottom."""
         frame = Frame(name, dict(args or {}))
+        self.chat_data.pop(ChatDataKey.FLOW.value, None)
         if self._locked() and self.screens[name].requires_session:
             self._park_and_unlock(frame)
         else:
@@ -1916,6 +2056,7 @@ class Navigator:
                 await self._push(frame)
         await self.show(new_message=True)
 
+    @serialized
     async def on_callback(self, update: Any) -> None:
         query = update.callback_query
         act = query.data
@@ -1925,6 +2066,10 @@ class Navigator:
             self.chat_data[_LIVE] = live = message_id
         if not isinstance(act, Act) or message_id != live:
             await self._stale(query)
+            return
+        if act.token is None or act.token != self.chat_data.get(_TOKEN):
+            await query.answer(STALE_BUTTON)
+            await self.show()
             return
         if act.screen == NAV:
             await query.answer()
@@ -1940,7 +2085,12 @@ class Navigator:
             await query.answer(LOCKED_TOAST)
             await self.show()
             return
-        toast = await self.apply(await screen.on_action(self._ctx(top), act))
+        try:
+            toast = await self.apply(await screen.on_action(self._ctx(top), act))
+        except Exception:
+            with contextlib.suppress(TelegramError):
+                await query.answer("⚠️ Operazione non riuscita")
+            raise
         await query.answer(toast)
 
     async def _stale(self, query: Any) -> None:
@@ -1957,6 +2107,7 @@ class Navigator:
             return Go(home=True)
         return Go(render=act.action != "noop")
 
+    @serialized
     async def on_text(self, update: Any) -> None:
         text = update.message.text or ""
         with contextlib.suppress(TelegramError):
@@ -1972,18 +2123,22 @@ class Navigator:
             return
         await self.apply(await screen.on_text(self._ctx(top), text))
 
+    @serialized
     async def on_document(self, update: Any) -> None:
-        top = self._top()
-        screen = self.screens[top.name]
-        if self._locked() and screen.requires_session:
-            await self.show()
-        elif not screen.accepts_document:
-            await self.show(notice="⚠️ Non mi aspettavo un file qui.")
-        else:
-            await self.apply(await screen.on_document(self._ctx(top), update.message.document))
-        with contextlib.suppress(TelegramError):
-            await update.message.delete()
+        try:
+            top = self._top()
+            screen = self.screens[top.name]
+            if self._locked() and screen.requires_session:
+                await self.show()
+            elif not screen.accepts_document:
+                await self.show(notice="⚠️ Non mi aspettavo un file qui.")
+            else:
+                await self.apply(await screen.on_document(self._ctx(top), update.message.document))
+        finally:
+            with contextlib.suppress(TelegramError):
+                await update.message.delete()
 
+    @serialized
     async def apply(self, result: Result) -> str | None:
         """Carry out a screen's result. Returns the toast for the callback answer."""
         if isinstance(result, Reveal):
@@ -1992,7 +2147,9 @@ class Navigator:
         if isinstance(result, Lock):
             await self.lock()
             return None
+        previous = self.fsm.frames()
         if result.home:
+            self.chat_data.pop(ChatDataKey.FLOW.value, None)
             self.fsm.reset_to(Frame(HOME, {}))
         for _ in range(result.pop):
             self.fsm.pop()
@@ -2002,6 +2159,11 @@ class Navigator:
                 self.fsm.pop()
         if result.push is not None:
             await self._push(result.push)
+        active_names = {frame.name for frame in self.fsm.frames()}
+        flows = self.chat_data.get(ChatDataKey.FLOW.value, {})
+        for frame in previous:
+            if frame.name not in active_names:
+                flows.pop(frame.name, None)
         if result.render:
             await self.show(notice=result.notice)
         return result.toast
@@ -2016,12 +2178,27 @@ class Navigator:
             self.application, chat_id=self.chat_id, message_id=msg.message_id, delay_seconds=seconds
         )
 
-    async def lock(self, *, notice: str = "🔒 Sessione bloccata.") -> None:
+    @serialized
+    async def lock(
+        self, *, notice: str = "🔒 Sessione bloccata.", expected_deadline: int | None = None
+    ) -> None:
+        if expected_deadline is not None:
+            session = self.fsm.get_session()
+            if (
+                session is None or session.expires_at != expected_deadline
+                or session.expires_at > int(time.time())
+            ):
+                return  # obsolete/early timers must not lock a newer session
+        target = (
+            self.chat_data.get(ChatDataKey.RESUME.value)
+            if self._top().name == UNLOCK else self._resume_target(self._top())
+        )
         self.fsm.lock()
         self._cancel_jobs(autolock_job_name(self.chat_id), expire_job_name(self.chat_id))
-        self.fsm.reset_to(Frame(UNLOCK, {}))
+        self._park_and_unlock(target)
         await self.show(notice=notice)
 
+    @serialized
     async def on_expired(self, token: int) -> None:
         if self.chat_data.get(_TOKEN) != token or self._locked():
             return
@@ -2029,11 +2206,13 @@ class Navigator:
         view = await self.screens[top.name].render_expired(self._ctx(top))
         if view is None:
             return
+        top.data["_closed"] = True
         try:
             await self.present(view)
         except TelegramError as e:
             log.warning("Auto-close failed for chat_id=%s: %s", self.chat_id, e)
 
+    @serialized
     async def stop(self) -> None:
         live = self.chat_data.get(_LIVE)
         if live is not None:
@@ -2042,28 +2221,28 @@ class Navigator:
         self._cancel_jobs(autolock_job_name(self.chat_id), expire_job_name(self.chat_id))
         self.chat_data.clear()
 
+    @serialized
     async def show_error(self) -> None:
         await self.present(
             View(
                 escape_md("⚠️ Errore interno. Lo sviluppatore è stato avvisato."),
                 keyboard([nav_btn("🏠 Menu", "home")]),
-            )
+            ),
+            enforce_session=False,  # this error view contains no vault data
         )
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/ui/test_navigator.py -q`
-Expected: PASS (all 20).
+Expected: PASS, including the additional lifecycle regressions below.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 uv run ruff format src tests && uv run ruff check src tests
 git add src tests
-git commit -m "Add Navigator: single live message, stack routing, lock and auto-close
-
-Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
+git commit -m "Add Navigator: single live message, stack routing, lock and auto-close"
 ```
 
 ---
@@ -2270,7 +2449,8 @@ async def test_autolock_job_locks_and_shows_unlock(env):
     app = SimpleNamespace(
         bot_data={"container": env.container, "screens": build_screens()}, job_queue=FakeJobQueue()
     )
-    context = SimpleNamespace(application=app, bot=bot, chat_data=env.chat_data, job=SimpleNamespace(chat_id=1))
+    env.session.expires_at = 0
+    context = SimpleNamespace(application=app, bot=bot, chat_data=env.chat_data, job=SimpleNamespace(chat_id=1, data=0))
     await autolock_job(context)
     assert SESSION not in env.chat_data
     assert "Vault bloccato" in bot.sent[-1].text
@@ -2282,7 +2462,8 @@ async def test_autolock_job_tolerates_blocked_user(env):
     app = SimpleNamespace(
         bot_data={"container": env.container, "screens": build_screens()}, job_queue=FakeJobQueue()
     )
-    context = SimpleNamespace(application=app, bot=bot, chat_data=env.chat_data, job=SimpleNamespace(chat_id=1))
+    env.session.expires_at = 0
+    context = SimpleNamespace(application=app, bot=bot, chat_data=env.chat_data, job=SimpleNamespace(chat_id=1, data=0))
     await autolock_job(context)  # must not raise
     assert SESSION not in env.chat_data
 
@@ -2324,7 +2505,8 @@ def schedule_autolock(application: Any, chat_id: int, expires_at: int) -> None:
     for job in jq.get_jobs_by_name(name):
         job.schedule_removal()
     jq.run_once(
-        autolock_job, when=max(1, expires_at - int(time.time())), chat_id=chat_id, name=name
+        autolock_job, when=max(1, expires_at - int(time.time())), chat_id=chat_id,
+        data=expires_at, name=name,
     )
 
 
@@ -2333,7 +2515,7 @@ async def autolock_job(context: Any) -> None:
     if job is None or job.chat_id is None:
         return
     try:
-        await Navigator.from_context(context, job.chat_id).lock()
+        await Navigator.from_context(context, job.chat_id).lock(expected_deadline=job.data)
     except TelegramError as e:
         log.warning("Autolock notice not delivered to chat_id=%s: %s", job.chat_id, e)
 ```
@@ -2559,9 +2741,7 @@ Expected: PASS.
 ```bash
 uv run ruff format src tests && uv run ruff check src tests
 git add src tests
-git commit -m "Add unlock/setup, home and help screens with autolock job
-
-Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
+git commit -m "Add unlock/setup, home and help screens with autolock job"
 ```
 
 ---
@@ -2870,9 +3050,7 @@ Expected: PASS.
 ```bash
 uv run ruff format src tests && uv run ruff check src tests
 git add src tests
-git commit -m "Add account list (with category mode) and search screens
-
-Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
+git commit -m "Add account list (with category mode) and search screens"
 ```
 
 ---
@@ -3093,6 +3271,10 @@ class AccountDetailScreen(Screen):
     title = "Dettaglio"
 
     async def render(self, ctx: Ctx) -> View:
+        if ctx.args.get("_closed"):
+            closed = await self.render_expired(ctx)
+            if closed is not None:
+                return closed
         acc = await load_account(ctx, ctx.args.get("id"))
         if acc is None:
             return View(escape_md("Account non trovato."), keyboard(footer(ctx.back_label)))
@@ -3142,7 +3324,12 @@ class AccountDetailScreen(Screen):
 
     async def on_action(self, ctx: Ctx, act: Act) -> Result:
         match act.action:
+            case "reopen":
+                ctx.args.pop("_closed", None)
+                return refresh()
             case "reveal":
+                if ctx.args.get("_closed"):
+                    return refresh(toast="🔒 Dettaglio chiuso")
                 acc = await load_account(ctx, ctx.args.get("id"))
                 value = None
                 if acc is not None:
@@ -3275,9 +3462,7 @@ Expected: PASS.
 ```bash
 uv run ruff format src tests && uv run ruff check src tests
 git add src tests
-git commit -m "Add account detail with native copy buttons, history and delete screens
-
-Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
+git commit -m "Add account detail with native copy buttons, history and delete screens"
 ```
 
 ---
@@ -3560,9 +3745,7 @@ Expected: PASS.
 ```bash
 uv run ruff format src tests && uv run ruff check src tests
 git add src tests
-git commit -m "Add edit submenu and single-field edit with username suggestions
-
-Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
+git commit -m "Add edit submenu and single-field edit with username suggestions"
 ```
 
 ---
@@ -3839,9 +4022,7 @@ Expected: PASS.
 ```bash
 uv run ruff format src tests && uv run ruff check src tests
 git add src tests
-git commit -m "Add reusable password generator screen
-
-Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
+git commit -m "Add reusable password generator screen"
 ```
 
 ---
@@ -4081,14 +4262,14 @@ Expected: PASS.
 ```bash
 uv run ruff format src tests && uv run ruff check src tests
 git add src tests
-git commit -m "Add password change screen using the generator or manual input
-
-Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
+git commit -m "Add password change screen using the generator or manual input"
 ```
 
 ---
 
 ### Task 12: Account creation wizard with summary
+
+Create `tests/ui/test_flow_navigation.py` from the Task 12 regression block under Task 16 and include it in this task's verification.
 
 **Files:**
 - Create: `src/password_bot/ui/screens/account_new.py`
@@ -4522,9 +4703,7 @@ Expected: PASS.
 ```bash
 uv run ruff format src tests && uv run ruff check src tests
 git add src tests
-git commit -m "Add account creation wizard with username suggestions and summary
-
-Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
+git commit -m "Add account creation wizard with username suggestions and summary"
 ```
 
 ---
@@ -4965,9 +5144,7 @@ Expected: PASS.
 ```bash
 uv run ruff format src tests && uv run ruff check src tests
 git add src tests
-git commit -m "Add category screens: list, picker, form, icon palette, delete
-
-Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
+git commit -m "Add category screens: list, picker, form, icon palette, delete"
 ```
 
 ---
@@ -5184,7 +5361,7 @@ class SettingsScreen(Screen):
 
     async def render(self, ctx: Ctx) -> View:
         user = await ctx.container.users.get(ctx.chat_id)
-        minutes = user.autolock_minutes if user else 15
+        minutes = (user.autolock_minutes or 15) if user else 15
         days = user.alert_days if user else 180
         sub = ctx.args.get("sub")
         back_row = [btn("🔙 Impostazioni", self.name, "sub", ""), nav_btn("🏠 Menu", "home")]
@@ -5228,7 +5405,7 @@ class SettingsScreen(Screen):
                 return replace(self.name, sub=act.arg or None)
             case "set_autolock" if act.arg in AUTOLOCK_CHOICES:
                 await ctx.container.users.update_autolock(
-                    ctx.chat_id, minutes=int(act.arg), reset_on_activity=True
+                    ctx.chat_id, minutes=int(act.arg), reset_on_activity=False
                 )
                 return replace(self.name, sub=None, notice=f"✅ Autolock: {act.arg} min")
             case "set_alert" if act.arg in ALERT_CHOICES:
@@ -5376,14 +5553,14 @@ Expected: PASS.
 ```bash
 uv run ruff format src tests && uv run ruff check src tests
 git add src tests
-git commit -m "Add health, settings and export/import screens
-
-Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
+git commit -m "Add health, settings and export/import screens"
 ```
 
 ---
 
 ### Task 15: Switch-over — wire the Navigator, remove the old handlers
+
+Include the Task 15 disk-reload regression collected under Task 16 in this task's failing tests.
 
 **Files:**
 - Create: `src/password_bot/ui/commands.py`, `src/password_bot/ui/legacy.py`, `tests/ui/test_wiring.py`
@@ -5712,6 +5889,7 @@ from telegram.ext import (
     ConversationHandler,
     MessageHandler,
     PicklePersistence,
+    PersistenceInput,
     filters,
 )
 
@@ -5773,7 +5951,10 @@ async def _users_iter(container: Container):
 
 
 def build_application(config: AppConfig, *, token: str, dev_chat_id: int | None) -> Application:
-    persistence = _SessionStrippingPersistence(filepath=str(config.pkl_path))
+    persistence = _SessionStrippingPersistence(
+        filepath=str(config.pkl_path),
+        store_data=PersistenceInput(bot_data=False, user_data=False, chat_data=True, callback_data=True),
+    )
 
     async def _post_init(app: Application) -> None:
         await migrate_to_latest(config.db_path)
@@ -5787,6 +5968,7 @@ def build_application(config: AppConfig, *, token: str, dev_chat_id: int | None)
         .token(token)
         .persistence(persistence)
         .arbitrary_callback_data(True)
+        .concurrent_updates(False)
         .post_init(_post_init)
         .build()
     )
@@ -6002,7 +6184,7 @@ Expected: all PASS, `All checks passed!`.
 ├── ui/                          ← single-live-message UI (see "UI: Navigator + Screens")
 │   ├── navigator.py             ← Navigator: stack, live message edit/send, routing, lock, auto-close, reveal
 │   ├── screen.py                ← View, Ctx, results (Go/Reveal/Lock) + helpers, Screen base class
-│   ├── callbacks.py             ← Act(screen, action, arg) payload + NAV pseudo-screen
+│   ├── callbacks.py             ← Act(screen, action, arg, token) payload + NAV pseudo-screen
 │   ├── views.py                 ← btn/nav_btn/copy_btn/url_btn/footer/keyboard, styles, normalize_url, md_date
 │   ├── jobs.py                  ← schedule_autolock / autolock_job
 │   ├── commands.py              ← PTB handler functions (slash commands, callbacks, text, documents)
@@ -6027,11 +6209,11 @@ Expected: all PASS, `All checks passed!`.
 ### UI: Navigator + Screens
 
 - **One live message.** The bot keeps a single message with buttons (`LIVE_MESSAGE_ID`) and edits it for every screen. Slash commands delete it and send a fresh one at the bottom. User text/documents are deleted after being read. Revealed secrets are separate messages deleted after 30 s.
-- **Screens** (`ui/screens/*`) subclass `Screen`: `render(ctx) -> View`, `on_action(ctx, act)`, optional `on_text` / `on_document` / `on_enter` / `render_expired`. They never send messages; they return `Go` (stack moves + notice/toast), `Reveal` or `Lock`. Helpers: `open_screen`, `replace`, `back`, `refresh`, `home`, `pop_to`, `finish`.
+- **Screens** (`ui/screens/*`) subclass `Screen`: `render(ctx) -> View`, `on_action(ctx, act)`, optional `on_text` / `on_document` / `on_enter` / `render_expired`. Navigation returns `Go` (stack moves + notice/toast), `Reveal` or `Lock`. The export screen is an explicit exception: it sends the encrypted document through `ctx.bot`; live-message edits still belong to Navigator. Helpers: `open_screen`, `replace`, `back`, `refresh`, `home`, `pop_to`, `finish`.
 - **Stack** frames are `Frame(name, data)`; `data` holds only ids/pages/flags/search queries. `🔙` pops (label = title of the screen below), `🏠` resets to `home`. Flows end with `finish(...)`/`pop_to(...)` so back never re-enters them.
-- **Callbacks** are `Act(screen, action, arg)` via `arbitrary_callback_data`. They are pickled into `DB.pkl`: only ids, indices, names — never usernames/passwords/URLs/notes. Values picked from lists live in `FLOW` and are referenced by index. Anything that isn't an `Act` on the live message is "Bottone scaduto" → Home.
+- **Callbacks** are `Act(screen, action, arg, token)` via `arbitrary_callback_data`. Navigator stamps `token` for each render; only the current message and generation may act. Pickled payloads contain ids, indices, names and render tokens, never usernames/passwords/URLs/notes. Values picked from lists live in `FLOW` and are referenced by index. Invalid payloads/non-live messages go to Home; outdated generations only refresh the current screen, preserving a closed detail.
 - **Flows** keep drafts in `ctx.flow(key)` (`ChatDataKey.FLOW`), never persisted, cleared by `FsmContext.lock()`. The generator returns a password by writing `flow[args["flow"]]["password"]` and `["step"] = args["next_step"]`.
-- **Locking.** With no session, any screen with `requires_session` is replaced by `unlock` and the target is parked in `RESUME`; after unlock the Navigator reopens it. Autolock edits the live message into the unlock screen.
+- **Locking.** Missing or expired sessions go to `unlock`; `RESUME` stores a restartable target, never a pending action. Dependent flows return to their creation root or account detail. Autolock and updates share a per-chat runtime lock; obsolete timer deadlines cannot lock a newer session. Runtime `bot_data` is not persisted.
 - **Auto-close.** A `View(expire_after=60)` (account detail) schedules `expire:<chat_id>`; if the live message still shows that render (`LIVE_TOKEN`), it becomes `render_expired()` (copy buttons disappear).
 - **Styles.** `views.PRIMARY` main action, `SUCCESS` confirmations, `DANGER` destructive.
 
@@ -6049,9 +6231,7 @@ Expected: all PASS, `All checks passed!`.
 
 ```bash
 git add -A src tests CLAUDE.md
-git commit -m "Switch the bot to the Navigator UI and remove the old handlers
-
-Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
+git commit -m "Switch the bot to the Navigator UI and remove the old handlers"
 ```
 
 ---
@@ -6063,6 +6243,211 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: every screen via `build_screens()`, the `env` fixture.
+
+**Review regressions — add in the owning task, then run again here.** These tests exercise the router and actual persistence, in addition to the screen-level tests. Keep them when removing the old handlers.
+
+Task 2, append to `tests/repositories/test_category_repo.py`:
+
+```python
+async def test_category_lookup_is_unicode_case_insensitive(repo):
+    await repo.create(Category(id="unicode", chat_id=1, name="Èlite", icon=None))
+    found = await repo.get_by_name(1, "ÈLITE")
+    assert found is not None and found.id == "unicode"
+    found = await repo.get_by_name(1, "èlite")
+    assert found is not None and found.id == "unicode"
+```
+
+Task 3, append to `tests/services/test_export_service.py` (uses its existing imports):
+
+```python
+@pytest.mark.parametrize("failure", ["passphrase", "later_item", "category_length"])
+async def test_invalid_import_does_not_write_categories_or_accounts(setup, tmp_db_path, failure):
+    export, vault_key, vault = setup
+    payload = json.loads(await export.export(
+        chat_id=1, vault_key=vault_key, export_passphrase="exp"
+    ))
+    payload["categories"] = ["New category"]
+    payload["items"][0]["category"] = "New category"
+    passphrase = "wrong" if failure == "passphrase" else "exp"
+    error = InvalidPassphraseError
+    if failure == "later_item":
+        payload["items"].append({**payload["items"][0], "password_enc": "broken"})
+    if failure == "category_length":
+        payload["categories"] = ["x" * 33]
+        error = InvalidExportFileError
+    before = await vault.list_decrypted(1, aes_key=vault_key)
+    with pytest.raises(error):
+        await export.import_payload(
+            json.dumps(payload), chat_id=1, vault_key=vault_key,
+            hmac_key=b"\x10" * 32, export_passphrase=passphrase,
+            strategy=MergeStrategy.OVERWRITE,
+        )
+    assert await vault.list_decrypted(1, aes_key=vault_key) == before
+    assert await CategoryRepo(tmp_db_path).list_for_chat(1) == []
+```
+
+Task 5, append to `tests/ui/test_navigator.py` (uses its existing helpers):
+
+```python
+async def test_expired_session_is_rejected_without_waiting_for_job():
+    nav, _, _ = make_nav()
+    await nav.command("items")
+    nav.fsm.get_session().expires_at = 0
+    update = callback(Act("items", "detail"), nav.chat_data[LIVE],
+                      token=nav.chat_data[ChatDataKey.LIVE_TOKEN.value])
+    await nav.on_callback(update)
+    assert stack(nav) == ["unlock"]
+    assert nav.fsm.get_session() is None
+    update.callback_query.answer.assert_awaited_once_with(LOCKED_TOAST)
+
+
+async def test_explicit_lock_resumes_target_and_discards_draft():
+    nav, _, _ = make_nav()
+    await nav.command("items", {"page": 3})
+    nav.chat_data[ChatDataKey.FLOW.value] = {"items": {"password": "secret"}}
+    await nav.lock()
+    assert ChatDataKey.FLOW.value not in nav.chat_data
+    assert nav.chat_data[RESUME] == Frame("items", {"page": 3})
+    await nav.on_text(text_message("pw"))
+    assert stack(nav) == ["home", "items"]
+
+
+async def test_later_home_command_replaces_pending_resume():
+    nav, _, _ = make_nav(locked=True)
+    await nav.command("items")
+    await nav.command("home")
+    await nav.on_text(text_message("pw"))
+    assert stack(nav) == ["home"]
+
+
+async def test_old_render_callback_cannot_act_on_same_screen():
+    nav, _, _ = make_nav()
+    await nav.command("items", {"page": 1})
+    old = callback(Act("items", "detail"), nav.chat_data[LIVE],
+                   token=nav.chat_data[ChatDataKey.LIVE_TOKEN.value])
+    await nav.show()
+    await nav.on_callback(old)
+    assert stack(nav) == ["home", "items"]
+    old.callback_query.answer.assert_awaited_once_with(STALE_BUTTON)
+
+
+async def test_home_and_back_discard_abandoned_flow():
+    nav, _, _ = make_nav()
+    await nav.command("items")
+    nav.chat_data[ChatDataKey.FLOW.value] = {"items": {"password": "secret"}}
+    await nav.apply(Go(pop=1))
+    assert not nav.chat_data.get(ChatDataKey.FLOW.value)
+    await nav.command("items")
+    nav.chat_data[ChatDataKey.FLOW.value] = {"items": {"password": "secret"}}
+    await nav.apply(Go(home=True))
+    assert not nav.chat_data.get(ChatDataKey.FLOW.value)
+
+
+async def test_obsolete_autolock_does_not_lock_new_session():
+    nav, _, _ = make_nav()
+    await nav.command("items")
+    await nav.lock(expected_deadline=0)
+    assert nav.fsm.get_session() is not None
+    assert stack(nav) == ["home", "items"]
+
+
+async def test_document_is_deleted_when_processing_fails():
+    import pytest
+    nav, _, _ = make_nav()
+    await nav.command("items")
+    nav.screens["items"].accepts_document = True
+    nav.screens["items"].on_document = AsyncMock(side_effect=RuntimeError("download failed"))
+    update = text_message("")
+    with pytest.raises(RuntimeError, match="download failed"):
+        await nav.on_document(update)
+    update.message.delete.assert_awaited_once()
+
+
+async def test_parser_failure_does_not_delete_live_message():
+    import pytest
+    nav, bot, _ = make_nav()
+    await nav.command("home")
+    bot.edit_error = BadRequest("Can't parse entities")
+    with pytest.raises(BadRequest):
+        await nav.show()
+    assert not bot.deleted
+
+
+async def test_timer_waits_for_in_flight_render_then_locks():
+    import asyncio
+
+    nav, bot, _ = make_nav()
+    await nav.command("items")
+    entered, release = asyncio.Event(), asyncio.Event()
+    original = nav.screens["items"].render
+
+    async def slow_render(ctx):
+        entered.set()
+        await release.wait()
+        return await original(ctx)
+
+    nav.screens["items"].render = slow_render
+    rendering = asyncio.create_task(nav.show())
+    await asyncio.wait_for(entered.wait(), timeout=1)
+    locking = asyncio.create_task(nav.lock())
+    await asyncio.sleep(0)
+    assert not locking.done()
+    release.set()
+    await asyncio.wait_for(asyncio.gather(rendering, locking), timeout=1)
+    assert stack(nav) == ["unlock"]
+    assert bot.edits[-1].text.endswith("unlock")
+```
+
+Task 12, create `tests/ui/test_flow_navigation.py` after registering the creation and generator screens:
+
+```python
+async def test_generator_lock_resumes_creation_root_through_navigator(env):
+    from types import SimpleNamespace
+
+    from password_bot.state.keys import ChatDataKey
+    from password_bot.ui.navigator import Navigator
+    from password_bot.ui.registry import build_screens
+    from password_bot.ui.screen import open_screen
+    from tests.ui._helpers import FakeBot, FakeJobQueue
+    from tests.ui.conftest import PASSPHRASE
+    from tests.ui.test_navigator import text_message
+
+    bot = FakeBot()
+    app = SimpleNamespace(
+        bot_data={"container": env.container, "screens": build_screens()}, job_queue=FakeJobQueue()
+    )
+    nav = Navigator(application=app, bot=bot, chat_id=1, chat_data=env.chat_data)
+    await nav.command("account_new")
+    await nav.on_text(text_message("Example"))
+    await nav.apply(open_screen("generator", flow="account_new", next_step="summary"))
+    await nav.lock()
+    assert env.chat_data[ChatDataKey.RESUME.value].name == "account_new"
+    await nav.on_text(text_message(PASSPHRASE))
+    assert [f.name for f in nav.fsm.frames()] == ["home", "account_new"]
+    assert env.chat_data[ChatDataKey.FLOW.value]["account_new"]["step"] == "name"
+```
+
+Task 15, append to `tests/ui/test_wiring.py`:
+
+```python
+async def test_sensitive_flow_is_absent_after_disk_reload(tmp_path):
+    from password_bot.bot import _SessionStrippingPersistence
+
+    path = tmp_path / "state.pkl"
+    persistence = _SessionStrippingPersistence(filepath=path)
+    await persistence.update_chat_data(1, {
+        ChatDataKey.SESSION.value: {"key": "KEY_SENTINEL"},
+        ChatDataKey.FLOW.value: {"account_new": {"password": "SECRET_SENTINEL"}},
+        ChatDataKey.NAV_STACK.value: [Frame("account_list", {})],
+    })
+    await persistence.flush()
+    assert b"SECRET_SENTINEL" not in path.read_bytes()
+    assert b"KEY_SENTINEL" not in path.read_bytes()
+    reloaded = await _SessionStrippingPersistence(filepath=path).get_chat_data()
+    assert reloaded[1] == {ChatDataKey.NAV_STACK.value: [Frame("account_list", {})]}
+```
+
+At Task 16, run these regressions with the full registry; none should be skipped.
 
 - [ ] **Step 1: Write the sweep test**
 
@@ -6180,7 +6565,7 @@ Run each and check the output:
 
 ```bash
 uv run pytest -q
-uv run pytest --cov=src/password_bot -q | tail -5
+uv run pytest --cov=src/password_bot --cov-fail-under=60 -q
 uv run ruff check src tests
 uv run ruff format --check src tests
 ```
@@ -6191,14 +6576,12 @@ Expected: all tests pass; total coverage ≥ 60% (the CI gate); `All checks pass
 
 ```bash
 git add tests/ui/test_security_sweep.py
-git commit -m "Add security sweep over every screen
-
-Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
+git commit -m "Add security sweep over every screen"
 ```
 
 - [ ] **Step 5: Hand the manual check to the human partner**
 
-The Bot API cannot be exercised from tests. Report back with this checklist for a run against a test bot token (`KEYRING=./keys uv run -m password_bot`), using a **copy** of the production `accounts.db` and `DB.pkl`:
+Unit tests with FakeBot do not validate Telegram parsing or real client behavior. An opt-in integration test can exercise the Bot API with a dedicated test token. Report back with this checklist for a run against a test bot token (`KEYRING=./keys uv run -m password_bot`), using a **copy** of the production `accounts.db` and `DB.pkl`:
 
 1. Bot starts with the old `DB.pkl` (no unpickling error); an old message's buttons answer "Bottone scaduto" and open Home.
 2. `/start` → unlock → Home in one message; navigating edits that message; `/list` moves it to the bottom.
@@ -6207,4 +6590,3 @@ The Bot API cannot be exercised from tests. Report back with this checklist for 
 5. ➕ Nuovo: username suggestions appear; summary → Salva opens the new account; 🔙 from it does not re-enter the wizard.
 6. Categories: create with icon, assign from detail, open category, delete (accounts kept).
 7. `/lock` then tap an old button of the live message → unlock → returns to that screen.
-```
