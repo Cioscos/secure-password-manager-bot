@@ -275,9 +275,6 @@ class Navigator:
         self._schedule_expiry(view.expire_after, token)
 
     async def _send_live(self, text: str, view: View, *, replacing: int | None) -> None:
-        if replacing is not None:
-            with contextlib.suppress(TelegramError):
-                await self.bot.delete_message(chat_id=self.chat_id, message_id=replacing)
         msg = await self.bot.send_message(
             chat_id=self.chat_id,
             text=text,
@@ -286,6 +283,9 @@ class Navigator:
             link_preview_options=_NO_PREVIEW,
         )
         self.chat_data[_LIVE] = msg.message_id
+        if replacing is not None:
+            with contextlib.suppress(TelegramError):
+                await self.bot.delete_message(chat_id=self.chat_id, message_id=replacing)
 
     def _cancel_jobs(self, *names: str) -> None:
         jq = self.application.job_queue
@@ -356,7 +356,10 @@ class Navigator:
             with contextlib.suppress(TelegramError):
                 await query.answer("⚠️ Operazione non riuscita")
             raise
-        await query.answer(toast)
+        with contextlib.suppress(BadRequest):
+            # A slow action may outlive Telegram's callback-query TTL; the action already
+            # succeeded and rendered, so a failed toast must not surface as an error.
+            await query.answer(toast)
 
     async def _stale(self, query: Any) -> None:
         await query.answer(STALE_BUTTON)

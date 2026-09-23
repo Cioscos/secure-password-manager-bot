@@ -608,6 +608,37 @@ async def test_resume_target_generator_without_parent_falls_back_to_home():
     assert nav._resume_target(Frame("generator", {})) == Frame("home", {})
 
 
+async def test_send_live_keeps_old_message_when_send_fails():
+    nav, bot, _ = make_nav(chat_data={LIVE: 7})
+    bot.send_error = RuntimeError("network down")
+    with pytest.raises(RuntimeError):
+        await nav.command("items", {"page": 2})
+    # The old live message must survive since no replacement was ever sent.
+    assert bot.deleted == []
+    assert nav.chat_data[LIVE] == 7
+
+
+async def test_send_live_deletes_old_message_only_after_new_one_is_sent():
+    nav, bot, _ = make_nav(chat_data={LIVE: 7})
+    await nav.command("items", {"page": 2})
+    assert bot.deleted == [7]
+    assert nav.chat_data[LIVE] == bot.sent[-1].message_id != 7
+
+
+async def test_stale_answer_after_successful_action_does_not_raise():
+    nav, bot, _ = make_nav()
+    await nav.command("items")
+    update = callback(
+        Act("items", "other"),
+        nav.chat_data[LIVE],
+        token=nav.chat_data.get(ChatDataKey.LIVE_TOKEN.value),
+    )
+    update.callback_query.answer = AsyncMock(side_effect=BadRequest("Query is too old"))
+    await nav.on_callback(update)  # must not raise, even though the final answer() fails
+    # The action itself (a refresh) still went through.
+    assert bot.edits[-1].text.startswith("items")
+
+
 async def test_resume_target_is_idempotent_for_every_mapped_name():
     nav, _, _ = make_nav(extra_screens=[AccountDetail(), AccountNew()])
     nav.fsm.reset_to(Frame("home", {}))

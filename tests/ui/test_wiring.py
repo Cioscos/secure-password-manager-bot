@@ -7,8 +7,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from telegram import Update
-from telegram.ext import CallbackQueryHandler
+from telegram import Chat, Document, Message, Update
+from telegram.ext import CallbackQueryHandler, MessageHandler
 
 from password_bot.bot import _SessionStrippingPersistence, build_application
 from password_bot.config import AppConfig
@@ -98,6 +98,53 @@ def test_cleanup_marks_changed_chats_for_persistence():
 
 def test_legacy_list_page_payload_still_unpickles():
     assert pickle.loads(pickle.dumps(ListPageData(page=2))) == ListPageData(page=2)
+
+
+def test_text_and_document_handlers_ignore_edited_messages(app):
+    root = next(h for h in app.handlers[0] if getattr(h, "name", None) == "root")
+    message_handlers = [h for h in root.states[0] if isinstance(h, MessageHandler)]
+    assert message_handlers, "expected the text/document MessageHandlers to be registered"
+
+    chat = Chat(id=1, type=Chat.PRIVATE)
+    text_message = Message(
+        message_id=1,
+        date=None,
+        chat=chat,
+        text="hello",
+        from_user=None,  # type: ignore[arg-type]
+    )
+    edited_text_message = Message(
+        message_id=1,
+        date=None,
+        chat=chat,
+        text="hello edited",
+        from_user=None,  # type: ignore[arg-type]
+    )
+    document_message = Message(
+        message_id=2,
+        date=None,  # type: ignore[arg-type]
+        chat=chat,
+        document=Document(file_id="f", file_unique_id="u"),
+    )
+    edited_document_message = Message(
+        message_id=2,
+        date=None,  # type: ignore[arg-type]
+        chat=chat,
+        document=Document(file_id="f", file_unique_id="u"),
+    )
+
+    new_text_update = Update(update_id=1, message=text_message)
+    edited_text_update = Update(update_id=2, edited_message=edited_text_message)
+    new_document_update = Update(update_id=3, message=document_message)
+    edited_document_update = Update(update_id=4, edited_message=edited_document_message)
+
+    # At least one handler must accept an ordinary new text/document message...
+    assert any(h.check_update(new_text_update) for h in message_handlers)
+    assert any(h.check_update(new_document_update) for h in message_handlers)
+    # ...but none may accept the edited counterpart (update.message would be None).
+    for handler in message_handlers:
+        assert not handler.check_update(edited_text_update)
+        assert not handler.check_update(edited_document_update)
 
 
 def _context(env, args):

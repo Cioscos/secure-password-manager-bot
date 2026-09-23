@@ -119,8 +119,12 @@ def build_application(config: AppConfig, *, token: str, dev_chat_id: int | None)
                 CommandHandler(["back", "cancel"], commands.cmd_back),
                 CommandHandler("lock", commands.cmd_lock),
                 CallbackQueryHandler(commands.on_callback),
-                MessageHandler(filters.Document.ALL, commands.on_document),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, commands.on_text),
+                MessageHandler(
+                    filters.UpdateType.MESSAGE & filters.Document.ALL, commands.on_document
+                ),
+                MessageHandler(
+                    filters.UpdateType.MESSAGE & filters.TEXT & ~filters.COMMAND, commands.on_text
+                ),
             ],
         },
         fallbacks=[CommandHandler("stop", commands.cmd_stop)],
