@@ -128,18 +128,6 @@ async def test_history_pruned_to_max(vault: VaultService, aes_key):
 
 
 @pytest.mark.asyncio
-async def test_duplicate_account(vault: VaultService, aes_key):
-    new = NewAccount(
-        chat_id=1, name="GitHub", username="u", password="p", url=None, note=None, category_id=None
-    )
-    acc = await vault.add(new, aes_key=aes_key, hmac_key=b"\x10" * 32)
-    copy = await vault.duplicate(acc.id, aes_key=aes_key, hmac_key=b"\x10" * 32)
-    assert copy.id != acc.id
-    assert copy.name == "GitHub (copia)"
-    assert copy.password == "p"
-
-
-@pytest.mark.asyncio
 async def test_username_suggestions_ranked_by_frequency(vault: VaultService, aes_key):
     for name, user in [
         ("a", "bob"),

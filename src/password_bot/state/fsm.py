@@ -67,15 +67,6 @@ class FsmContext:
     def pop_resume(self) -> Frame | None:
         return self._chat_data.pop(ChatDataKey.RESUME.value, None)
 
-    def get_pending_input(self) -> dict[str, Any] | None:
-        return self._chat_data.get(ChatDataKey.PENDING_INPUT.value)
-
-    def set_pending_input(self, payload: dict[str, Any]) -> None:
-        self._chat_data[ChatDataKey.PENDING_INPUT.value] = payload
-
-    def clear_pending_input(self) -> None:
-        self._chat_data.pop(ChatDataKey.PENDING_INPUT.value, None)
-
     def get_session(self) -> Any | None:
         return self._chat_data.get(ChatDataKey.SESSION.value)
 
@@ -89,14 +80,6 @@ class FsmContext:
     def lock(self) -> None:
         """Drop the session and every in-progress flow, so the next text is a passphrase."""
         self.clear_session()
-        for key in (
-            ChatDataKey.PENDING_INPUT,
-            ChatDataKey.PENDING_NEW_ACCOUNT,
-            ChatDataKey.PENDING_IMPORT_FILE,
-            ChatDataKey.PW_GEN_DRAFT,
-            ChatDataKey.PW_GEN_RETURN_TO,
-            ChatDataKey.FLOW,
-            ChatDataKey.RESUME,
-        ):
+        for key in (ChatDataKey.FLOW, ChatDataKey.RESUME):
             self._chat_data.pop(key.value, None)
         self._chat_data[ChatDataKey.NAV_STACK.value] = []

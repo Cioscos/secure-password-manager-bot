@@ -35,28 +35,17 @@ def test_reset_to():
     assert fsm.top().name == "menu"
 
 
-def test_pending_input_set_and_clear():
-    fsm = FsmContext({})
-    fsm.set_pending_input({"field": "password", "id": "a1"})
-    assert fsm.get_pending_input() == {"field": "password", "id": "a1"}
-    fsm.clear_pending_input()
-    assert fsm.get_pending_input() is None
-
-
 def test_lock_clears_session_and_all_in_progress_state():
     from password_bot.state.keys import ChatDataKey
 
     data = {
         ChatDataKey.SESSION.value: object(),
         ChatDataKey.LEGACY_SESSION_EXTRAS.value: object(),
-        ChatDataKey.PENDING_INPUT.value: {"field": "_search_query"},
-        ChatDataKey.PENDING_NEW_ACCOUNT.value: {"step": "name"},
-        ChatDataKey.PENDING_IMPORT_FILE.value: b"x",
-        ChatDataKey.PW_GEN_DRAFT.value: {"length": 20},
-        ChatDataKey.PW_GEN_RETURN_TO.value: "account_new",
+        ChatDataKey.FLOW.value: {"account_new": {"password": "x"}},
+        ChatDataKey.RESUME.value: Screen(name="home", data={}),
     }
     fsm = FsmContext(data)
-    fsm.push(Screen(name="account_view", data={}))
+    fsm.push(Screen(name="account_detail", data={}))
     fsm.lock()
     assert fsm.get_session() is None
     assert data == {ChatDataKey.NAV_STACK.value: []}

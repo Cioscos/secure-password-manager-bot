@@ -186,21 +186,5 @@ class VaultService:
             for e in entries
         ]
 
-    async def duplicate(self, account_id: str, *, aes_key: bytes, hmac_key: bytes) -> Account:
-        original = await self._accounts.get(account_id)
-        if original is None:
-            raise ValueError(f"Account {account_id} not found")
-        plain = self._decrypt_row(original, aes_key)
-        new = NewAccount(
-            chat_id=plain.chat_id,
-            name=f"{plain.name} (copia)",
-            username=plain.username,
-            password=plain.password,
-            url=plain.url,
-            note=plain.note,
-            category_id=plain.category_id,
-        )
-        return await self.add(new, aes_key=aes_key, hmac_key=hmac_key)
-
     async def delete(self, account_id: str) -> None:
         await self._accounts.delete(account_id)
