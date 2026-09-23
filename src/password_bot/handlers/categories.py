@@ -165,7 +165,7 @@ async def _create_category(update: Update, context: ContextTypes.DEFAULT_TYPE, n
             id=str(uuid.uuid4()),
             chat_id=update.effective_chat.id,
             name=name,
-            color=None,
+            icon=None,
         )
     )
     await update.effective_chat.send_message(MESSAGES["cat_created"].format(name=name))

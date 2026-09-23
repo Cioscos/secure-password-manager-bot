@@ -113,6 +113,27 @@ class VaultService:
         rows = await self._accounts.list_for_chat(chat_id)
         return [self._decrypt_row(r, aes_key) for r in rows]
 
+    async def username_suggestions(
+        self, chat_id: int, *, aes_key: bytes, limit: int = 5
+    ) -> list[str]:
+        """Most used usernames/emails, most frequent first, ties broken by most recent use.
+
+        Emails (values containing '@') are grouped case-insensitively; the most
+        recently used spelling is returned. Only `username_enc` is decrypted.
+        """
+        stats: dict[str, tuple[str, int, int]] = {}  # key -> (display, count, last_used)
+        for row in await self._accounts.list_for_chat(chat_id):
+            value = self._dec(row.username_enc, aes_key)
+            if not value:
+                continue
+            key = value.lower() if "@" in value else value
+            display, count, last = stats.get(key, (value, 0, 0))
+            if row.updated_at >= last:
+                display = value
+            stats[key] = (display, count + 1, max(last, row.updated_at))
+        ranked = sorted(stats.values(), key=lambda s: (-s[1], -s[2]))
+        return [display for display, _, _ in ranked[:limit]]
+
     async def update_fields(
         self, account_id: str, updates: UpdatedFields, *, aes_key: bytes
     ) -> None:

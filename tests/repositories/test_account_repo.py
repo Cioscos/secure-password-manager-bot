@@ -4,8 +4,10 @@ from pathlib import Path
 import pytest
 
 from password_bot.models.account import AccountRow
+from password_bot.models.category import Category
 from password_bot.models.user import User
-from password_bot.repositories.account_repo import AccountRepo
+from password_bot.repositories.account_repo import UNCATEGORIZED, AccountRepo
+from password_bot.repositories.category_repo import CategoryRepo
 from password_bot.repositories.migrator import migrate_to_latest
 from password_bot.repositories.user_repo import UserRepo
 
@@ -157,3 +159,29 @@ async def test_list_reuse_clusters_is_per_chat(repos: AccountRepo, tmp_db_path: 
     await repos.insert(_make_row("a1", chat_id=1))
     await repos.insert(_make_row("a2", chat_id=2))
     assert await repos.list_reuse_clusters(1) == []
+
+
+@pytest.mark.asyncio
+async def test_find_by_hmac(repos: AccountRepo):
+    for account_id, name, hmac in [
+        ("a1", "GitHub", "h1"),
+        ("a2", "GitLab", "h1"),
+        ("a3", "X", "h2"),
+    ]:
+        row = _make_row(account_id, name=name)
+        row.password_hmac = hmac
+        await repos.insert(row)
+    assert [r.id for r in await repos.find_by_hmac(1, "h1")] == ["a1", "a2"]
+    assert await repos.find_by_hmac(1, "") == []
+
+
+@pytest.mark.asyncio
+async def test_list_for_chat_category_filter(repos: AccountRepo, tmp_db_path: Path):
+    await CategoryRepo(tmp_db_path).create(Category(id="c1", chat_id=1, name="Work", icon=None))
+    in_cat = _make_row("a1", name="A")
+    in_cat.category_id = "c1"
+    await repos.insert(in_cat)
+    await repos.insert(_make_row("a2", name="B"))
+    assert [r.id for r in await repos.list_for_chat(1, category="c1")] == ["a1"]
+    assert [r.id for r in await repos.list_for_chat(1, category=UNCATEGORIZED)] == ["a2"]
+    assert len(await repos.list_for_chat(1)) == 2

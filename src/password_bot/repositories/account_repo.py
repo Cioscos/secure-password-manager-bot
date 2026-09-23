@@ -33,6 +33,8 @@ def _row_to_account_row(row: aiosqlite.Row) -> AccountRow:
 
 _ALLOWED_UPDATE_FIELDS = {"username_enc", "url_enc", "note_enc", "category_id", "name"}
 
+UNCATEGORIZED = "none"  # list_for_chat(category=UNCATEGORIZED) → accounts without category
+
 
 class AccountRepo:
     def __init__(self, db_path: Path) -> None:
@@ -71,11 +73,30 @@ class AccountRepo:
             row = await cur.fetchone()
             return _row_to_account_row(row) if row else None
 
-    async def list_for_chat(self, chat_id: int) -> list[AccountRow]:
+    async def list_for_chat(self, chat_id: int, *, category: str | None = None) -> list[AccountRow]:
+        where = "chat_id=?"
+        params: list[Any] = [chat_id]
+        if category == UNCATEGORIZED:
+            where += " AND category_id IS NULL"
+        elif category is not None:
+            where += " AND category_id=?"
+            params.append(category)
         async with connect(self._db_path) as conn:
             cur = await conn.execute(
-                "SELECT * FROM accounts WHERE chat_id=? ORDER BY name COLLATE NOCASE",
-                (chat_id,),
+                f"SELECT * FROM accounts WHERE {where} ORDER BY name COLLATE NOCASE", params
+            )
+            return [_row_to_account_row(r) for r in await cur.fetchall()]
+
+    async def find_by_hmac(self, chat_id: int, password_hmac: str) -> list[AccountRow]:
+        if not password_hmac:
+            return []
+        async with connect(self._db_path) as conn:
+            cur = await conn.execute(
+                """
+                SELECT * FROM accounts WHERE chat_id=? AND password_hmac=?
+                 ORDER BY name COLLATE NOCASE
+                """,
+                (chat_id, password_hmac),
             )
             return [_row_to_account_row(r) for r in await cur.fetchall()]
 
