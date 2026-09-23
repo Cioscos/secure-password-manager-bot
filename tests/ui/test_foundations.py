@@ -9,6 +9,7 @@ import time
 import pytest
 from telegram.constants import KeyboardButtonStyle
 
+from password_bot.bot import _SessionStrippingPersistence
 from password_bot.models.category import Category
 from password_bot.state.fsm import Frame, FsmContext
 from password_bot.state.keys import ChatDataKey
@@ -175,8 +176,6 @@ def test_result_helpers():
 
 
 async def test_persistence_strips_flow(tmp_path):
-    from password_bot.bot import _SessionStrippingPersistence
-
     persistence = _SessionStrippingPersistence(filepath=str(tmp_path / "p.pkl"))
     await persistence.update_chat_data(
         1, {ChatDataKey.FLOW.value: {"x": 1}, ChatDataKey.NAV_STACK.value: []}
