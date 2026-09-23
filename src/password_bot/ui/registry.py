@@ -11,6 +11,7 @@ from password_bot.ui.screens.generator import GeneratorScreen
 from password_bot.ui.screens.help import HelpScreen
 from password_bot.ui.screens.history import HistoryScreen
 from password_bot.ui.screens.home import HomeScreen
+from password_bot.ui.screens.password_change import PasswordChangeScreen
 from password_bot.ui.screens.search import SearchScreen
 from password_bot.ui.screens.unlock import UnlockScreen
 
@@ -28,5 +29,6 @@ def build_screens() -> dict[str, Screen]:
         HistoryScreen(),
         AccountDeleteScreen(),
         GeneratorScreen(),
+        PasswordChangeScreen(),
     ]
     return {s.name: s for s in screens}
